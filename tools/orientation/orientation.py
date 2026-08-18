@@ -24,6 +24,13 @@ ACTIONS = {
     "flip_vertical": "vflip",
 }
 
+ASPECT_RATIOS = {
+    "landscape_16_9": (16, 9),
+    "portrait_9_16": (9, 16),
+    "square_1_1": (1, 1),
+    "portrait_4_5": (4, 5),
+}
+
 
 def is_valid_time(value: str) -> bool:
     return bool(TIME_RE.match(value))
@@ -87,6 +94,27 @@ def change_orientation(
 
     cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18", str(output_path)]
 
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+
+
+def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str) -> None:
+    """Recadre (crop centré, sans déformation) au format d'affichage choisi."""
+    if ratio_key not in ASPECT_RATIOS:
+        raise ValueError(f"Format inconnu : {ratio_key}. Choix possibles : {', '.join(ASPECT_RATIOS)}")
+
+    rw, rh = ASPECT_RATIOS[ratio_key]
+    r = rw / rh
+    crop_filter = f"crop=w='if(gt(iw/ih,{r}),ih*{r},iw)':h='if(gt(iw/ih,{r}),ih,iw/{r})'"
+
+    cmd = [
+        "ffmpeg", "-y", "-i", str(input_path),
+        "-vf", crop_filter,
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-c:a", "copy",
+        str(output_path),
+    ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())

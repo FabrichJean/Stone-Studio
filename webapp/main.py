@@ -22,7 +22,13 @@ sys.path.insert(0, str(ROOT / "tools" / "speed_media"))
 sys.path.insert(0, str(ROOT / "tools" / "orientation"))
 from extract_audio import FORMATS, extract_audio  # noqa: E402
 from media_utils import generate_thumbnail, probe_media  # noqa: E402
-from orientation import ACTIONS as ORIENTATION_ACTIONS, change_orientation, orient_segments  # noqa: E402
+from orientation import (  # noqa: E402
+    ACTIONS as ORIENTATION_ACTIONS,
+    ASPECT_RATIOS,
+    apply_aspect_ratio,
+    change_orientation,
+    orient_segments,
+)
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
 
@@ -282,9 +288,12 @@ async def api_orientation(
     mode: str = Form(...),  # "global" | "segments"
     actions: str | None = Form(None),  # JSON: ["rotate_90_cw", "flip_horizontal"] (mode=global)
     segments: str | None = Form(None),  # JSON: [{"start","end","actions":[...]}, ...] (mode=segments)
+    aspect_ratio: str | None = Form(None),  # ex: "portrait_9_16" — appliqué après l'orientation
 ):
     if mode not in ("global", "segments"):
         raise HTTPException(400, "Mode invalide (global ou segments).")
+    if aspect_ratio and aspect_ratio not in ASPECT_RATIOS:
+        raise HTTPException(400, f"Format d'affichage non supporté : {aspect_ratio}")
 
     job_id = uuid.uuid4().hex
     suffix = Path(video.filename).suffix
@@ -292,10 +301,15 @@ async def api_orientation(
     video_path = UPLOADS_DIR / video_file
     output_file = f"{job_id}{suffix}"
     output_path = OUTPUT_DIR / output_file
+    intermediate_path = OUTPUT_DIR / f"{job_id}_pre{suffix}"
 
     with video_path.open("wb") as f:
         shutil.copyfileobj(video.file, f)
     save_project("upload", None, "uploads", video_file, video.filename)
+
+    # Si un format d'affichage est demandé, l'orientation écrit d'abord dans un fichier
+    # intermédiaire, puis le recadrage produit le fichier final dans output_path.
+    target = intermediate_path if aspect_ratio else output_path
 
     try:
         if mode == "global":
@@ -304,13 +318,18 @@ async def api_orientation(
             except json.JSONDecodeError as e:
                 raise HTTPException(400, "Le champ 'actions' doit être un JSON valide.") from e
 
-            if not isinstance(action_list, list) or not action_list:
-                raise HTTPException(400, "Au moins une action est requise.")
+            if not isinstance(action_list, list):
+                raise HTTPException(400, "Le champ 'actions' doit être une liste JSON.")
             for a in action_list:
                 if a not in ORIENTATION_ACTIONS:
                     raise HTTPException(400, f"Action non supportée : {a}")
+            if not action_list and not aspect_ratio:
+                raise HTTPException(400, "Choisissez au moins une action ou un format d'affichage.")
 
-            change_orientation(video_path, output_path, action_list)
+            if action_list:
+                change_orientation(video_path, target, action_list)
+            else:
+                shutil.copy(video_path, target)
         else:
             try:
                 seg_list = json.loads(segments or "[]")
@@ -332,7 +351,11 @@ async def api_orientation(
                         raise HTTPException(400, f"Action non supportée dans un segment : {a}")
                 pairs.append({"start": start, "end": end, "actions": seg_actions})
 
-            orient_segments(video_path, pairs, output_path)
+            orient_segments(video_path, pairs, target)
+
+        if aspect_ratio:
+            apply_aspect_ratio(target, output_path, aspect_ratio)
+            intermediate_path.unlink(missing_ok=True)
     except RuntimeError as e:
         raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
 
