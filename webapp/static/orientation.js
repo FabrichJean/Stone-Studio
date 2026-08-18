@@ -6,6 +6,8 @@ const info = document.getElementById("info");
 const status = document.getElementById("status");
 const pickProjectLink = document.getElementById("pickProjectLink");
 
+const aspectSection = document.getElementById("aspectSection");
+const aspectGrid = document.getElementById("aspectGrid");
 const modeSection = document.getElementById("modeSection");
 const modeToggle = document.getElementById("modeToggle");
 const globalPanel = document.getElementById("globalPanel");
@@ -44,6 +46,34 @@ const ACTION_LABELS = {
 };
 
 const ROTATE_90_ACTIONS = new Set(["rotate_90_cw", "rotate_90_ccw"]);
+
+const ASPECT_CSS_RATIOS = {
+  landscape_16_9: "16 / 9",
+  portrait_9_16: "9 / 16",
+  square_1_1: "1 / 1",
+  portrait_4_5: "4 / 5",
+};
+
+let selectedAspect = "";
+
+function applyAspectPreview(value) {
+  if (!value) {
+    preview.style.aspectRatio = "";
+    preview.style.objectFit = "";
+  } else {
+    preview.style.aspectRatio = ASPECT_CSS_RATIOS[value];
+    preview.style.objectFit = "cover";
+  }
+}
+
+aspectGrid.querySelectorAll(".orientation-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    selectedAspect = btn.dataset.aspect;
+    aspectGrid.querySelectorAll(".orientation-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    applyAspectPreview(selectedAspect);
+    updateApplyState();
+  });
+});
 
 let selectedFile = null;
 let mediaDuration = 0;
@@ -118,13 +148,18 @@ function handleFile(file) {
   currentSegmentActions = [];
   segments = [];
   preview.style.transform = "";
+  preview.style.aspectRatio = "";
+  preview.style.objectFit = "";
+  selectedAspect = "";
   document.querySelectorAll(".orientation-btn").forEach((b) => b.classList.remove("active"));
+  aspectGrid.querySelector('.orientation-btn[data-aspect=""]').classList.add("active");
   renderSegments();
 
   const url = URL.createObjectURL(file);
   preview.src = url;
   videoStage.hidden = false;
   dropzone.hidden = true;
+  aspectSection.hidden = false;
   modeSection.hidden = false;
 
   preview.onloadedmetadata = () => {
@@ -153,7 +188,8 @@ function handleFile(file) {
 /* ---------- Bascule de mode ---------- */
 
 function updateApplyState() {
-  applyBtn.disabled = !selectedFile || (mode === "global" ? globalActions.length === 0 : segments.length === 0);
+  const hasWork = mode === "global" ? globalActions.length > 0 || !!selectedAspect : segments.length > 0;
+  applyBtn.disabled = !selectedFile || !hasWork;
 }
 
 modeToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
@@ -367,6 +403,7 @@ applyBtn.addEventListener("click", async () => {
   const formData = new FormData();
   formData.append("video", selectedFile);
   formData.append("mode", mode);
+  if (selectedAspect) formData.append("aspect_ratio", selectedAspect);
 
   if (mode === "global") {
     formData.append("actions", JSON.stringify(globalActions));
