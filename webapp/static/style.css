@@ -302,6 +302,28 @@ h1, h2, h3, .serif {
   pointer-events: none;
 }
 
+.playhead {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  background: var(--text-dark);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.playhead::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--text-dark);
+  border-radius: 50%;
+  transform: translateX(-50%);
+}
+
 .trim-handle {
   position: absolute;
   top: -1px;
