@@ -18,6 +18,7 @@ const startLabel = document.getElementById("startLabel");
 const endLabel = document.getElementById("endLabel");
 const durationLabel = document.getElementById("durationLabel");
 const segmentsList = document.getElementById("segmentsList");
+const pickProjectLink = document.getElementById("pickProjectLink");
 
 let selectedFile = null;
 let mediaDuration = 0;
@@ -28,6 +29,11 @@ let previewStopHandler = null;
 let segments = []; // [{ start: seconds, end: seconds }]
 
 dropzone.addEventListener("click", () => fileInput.click());
+
+pickProjectLink.addEventListener("click", (e) => {
+  e.stopPropagation();
+  openProjectPicker(handleFile);
+});
 
 dropzone.addEventListener("dragover", (e) => {
   e.preventDefault();

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+    <header class="page-header">
+      <h1>▢ Mes projets</h1>
+      <p>Historique des fichiers traités par les outils du studio.</p>
+    </header>
+
+    {% if projects %}
+    <div class="projects-list">
+      {% for p in projects %}
+      <div class="project-card">
+        <div class="project-icon">{{ p.tool_icon }}</div>
+        <div class="project-main">
+          <div class="project-tool">{{ p.tool_label }}</div>
+          <div class="project-files">
+            {% if p.is_source %}
+            <span class="project-output" title="{{ p.output_name }}">{{ p.output_name }}</span>
+            {% else %}
+            <span class="project-input" title="{{ p.input_name }}">{{ p.input_name }}</span>
+            <span class="project-arrow">→</span>
+            <span class="project-output" title="{{ p.output_name }}">{{ p.output_name }}</span>
+            {% endif %}
+          </div>
+          <div class="project-meta">
+            <span>{{ p.created_at[:16].replace('T', ' ') }}</span>
+            <span>{{ "%.1f"|format(p.output_size / 1048576) }} MB</span>
+          </div>
+        </div>
+        <a class="btn-download" href="/api/projects/{{ p.id }}/download" download>⬇ Télécharger</a>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="panel projects-empty">
+      <p>Aucun projet pour le moment. Les fichiers traités via les outils apparaîtront ici.</p>
+    </div>
+    {% endif %}
+{% endblock %}
