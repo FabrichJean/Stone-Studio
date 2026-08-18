@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+    <header class="page-header">
+      <h1>✂ Trim media</h1>
+      <p>Découpez un segment d'un fichier audio ou vidéo.</p>
+    </header>
+
+    <section class="panel trim-panel">
+      <div id="dropzone" class="dropzone">
+        <div class="dropzone-icon">▶</div>
+        <div class="dropzone-title">Glissez votre fichier ici</div>
+        <div class="dropzone-sub">ou <span class="link">cliquez pour parcourir</span></div>
+        <div class="dropzone-hint">MP4, MOV, MP3, WAV et plus</div>
+        <input id="fileInput" type="file" accept="video/*,audio/*" hidden />
+      </div>
+
+      <div id="videoStage" class="video-stage" hidden>
+        <video id="preview" controls></video>
+      </div>
+
+      <div class="params">
+        <div class="trim-times">
+          <span id="startLabel">00:00:00</span>
+          <span id="durationLabel" class="trim-duration">sélectionnez un fichier</span>
+          <span id="endLabel">00:00:00</span>
+        </div>
+
+        <div id="trimTrack" class="trim-track">
+          <div id="trimRange" class="trim-range"></div>
+          <div id="handleStart" class="trim-handle" tabindex="0"></div>
+          <div id="handleEnd" class="trim-handle" tabindex="0"></div>
+        </div>
+
+        <button id="previewBtn" class="btn-secondary" disabled>▶ Prévisualiser le segment</button>
+      </div>
+
+      <button id="trimBtn" class="btn-primary" disabled>✂ Découper</button>
+      <div id="status" class="status"></div>
+      <div id="info" class="info-list"></div>
+    </section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/trim.js"></script>
+{% endblock %}
