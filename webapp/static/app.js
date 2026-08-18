@@ -5,10 +5,16 @@ const preview = document.getElementById("preview");
 const info = document.getElementById("info");
 const extractBtn = document.getElementById("extractBtn");
 const status = document.getElementById("status");
+const pickProjectLink = document.getElementById("pickProjectLink");
 
 let selectedFile = null;
 
 dropzone.addEventListener("click", () => fileInput.click());
+
+pickProjectLink.addEventListener("click", (e) => {
+  e.stopPropagation();
+  openProjectPicker(handleFile);
+});
 
 dropzone.addEventListener("dragover", (e) => {
   e.preventDefault();

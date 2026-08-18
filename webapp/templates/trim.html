@@ -9,7 +9,7 @@
       <div id="dropzone" class="dropzone">
         <div class="dropzone-icon">▶</div>
         <div class="dropzone-title">Glissez votre fichier ici</div>
-        <div class="dropzone-sub">ou <span class="link">cliquez pour parcourir</span></div>
+        <div class="dropzone-sub">ou <span class="link">cliquez pour parcourir</span> · <span class="link" id="pickProjectLink">choisir depuis mes projets</span></div>
         <div class="dropzone-hint">MP4, MOV, MP3, WAV et plus</div>
         <input id="fileInput" type="file" accept="video/*,audio/*" hidden />
       </div>
@@ -53,5 +53,6 @@
     </section>
 {% endblock %}
 {% block scripts %}
+<script src="/static/common.js"></script>
 <script src="/static/trim.js"></script>
 {% endblock %}
