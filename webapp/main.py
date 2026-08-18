@@ -19,8 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "tools" / "extract_audio"))
 sys.path.insert(0, str(ROOT / "tools" / "trim_media"))
 sys.path.insert(0, str(ROOT / "tools" / "speed_media"))
+sys.path.insert(0, str(ROOT / "tools" / "orientation"))
 from extract_audio import FORMATS, extract_audio  # noqa: E402
 from media_utils import generate_thumbnail, probe_media  # noqa: E402
+from orientation import ACTIONS as ORIENTATION_ACTIONS, change_orientation  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
 
@@ -43,6 +45,7 @@ TOOL_LABELS = {
     "extract_audio": "Extraction audio",
     "trim_media": "Trim media",
     "speed_media": "Speed",
+    "orientation": "Orientation",
 }
 
 
@@ -101,6 +104,11 @@ def trim_page(request: Request):
 @app.get("/speed")
 def speed_page(request: Request):
     return templates.TemplateResponse(request, "speed.html", {"active_tool": "speed_media"})
+
+
+@app.get("/orientation")
+def orientation_page(request: Request):
+    return templates.TemplateResponse(request, "orientation.html", {"active_tool": "orientation"})
 
 
 @app.get("/projects")
@@ -264,5 +272,36 @@ async def api_speed_media(
     stem = Path(media.filename).stem
     output_name = f"{stem}_speed{suffix}"
     save_project("speed_media", media.filename, "output", output_file, output_name)
+
+    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+
+
+@app.post("/api/orientation")
+async def api_orientation(
+    video: UploadFile = File(...),
+    action: str = Form(...),
+):
+    if action not in ORIENTATION_ACTIONS:
+        raise HTTPException(400, f"Action non supportée : {action}")
+
+    job_id = uuid.uuid4().hex
+    suffix = Path(video.filename).suffix
+    video_file = f"{job_id}_{video.filename}"
+    video_path = UPLOADS_DIR / video_file
+    output_file = f"{job_id}{suffix}"
+    output_path = OUTPUT_DIR / output_file
+
+    with video_path.open("wb") as f:
+        shutil.copyfileobj(video.file, f)
+    save_project("upload", None, "uploads", video_file, video.filename)
+
+    try:
+        change_orientation(video_path, output_path, action)
+    except RuntimeError as e:
+        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+
+    stem = Path(video.filename).stem
+    output_name = f"{stem}_orientation{suffix}"
+    save_project("orientation", video.filename, "output", output_file, output_name)
 
     return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
