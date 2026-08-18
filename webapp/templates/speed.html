@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+    <header class="page-header">
+      <h1><span class="icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l5 4-5 4"/><path d="M9 4l5 4-5 4"/></svg></span> Speed</h1>
+      <p>Changez la vitesse d'un média, globalement ou morceau par morceau.</p>
+    </header>
+
+    <section class="panel trim-panel">
+      <div id="dropzone" class="dropzone">
+        <div class="dropzone-icon"><svg width="28" height="28" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.7v10.6a.5.5 0 0 0 .77.42l8.4-5.3a.5.5 0 0 0 0-.84l-8.4-5.3a.5.5 0 0 0-.77.42z"/></svg></div>
+        <div class="dropzone-title">Glissez votre fichier ici</div>
+        <div class="dropzone-sub">ou <span class="link">cliquez pour parcourir</span> · <span class="link" id="pickProjectLink">choisir depuis mes projets</span></div>
+        <div class="dropzone-hint">MP4, MOV, MP3, WAV et plus</div>
+        <input id="fileInput" type="file" accept="video/*,audio/*" hidden />
+      </div>
+
+      <div id="projectPicker" class="project-picker" hidden>
+        <div class="picker-inline-header">
+          <input type="text" id="pickerSearch" placeholder="Rechercher un fichier..." autocomplete="off" />
+          <div class="view-toggle" id="pickerViewToggle">
+            <button type="button" class="view-toggle-btn" data-view="list" title="Vue liste">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 4.5H13M3 8H13M3 11.5H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" class="view-toggle-btn" data-view="card" title="Vue cartes">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="2" y="9" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <button type="button" class="picker-back" id="pickerBack">Annuler</button>
+        </div>
+        <div id="pickerList" class="picker-inline-list"></div>
+      </div>
+
+      <div id="videoStage" class="video-stage" hidden>
+        <video id="preview" controls></video>
+      </div>
+
+      <div id="modeSection" class="params" hidden>
+        <div class="mode-toggle" id="modeToggle">
+          <button type="button" class="mode-toggle-btn active" data-mode="global">Vitesse globale</button>
+          <button type="button" class="mode-toggle-btn" data-mode="segments">Par morceau</button>
+        </div>
+
+        <div id="globalPanel" class="speed-panel">
+          <label class="speed-label">
+            Vitesse du fichier entier
+            <select id="globalSpeed">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x (normal)</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+              <option value="3">3x</option>
+              <option value="4">4x</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="segmentsPanel" class="speed-panel" hidden>
+          <h3>Morceau en cours de sélection</h3>
+          <div class="trim-times">
+            <span id="startLabel">00:00:00</span>
+            <span id="durationLabel" class="trim-duration">sélectionnez un fichier</span>
+            <span id="endLabel">00:00:00</span>
+          </div>
+
+          <div id="trimTrack" class="trim-track">
+            <div id="trimRange" class="trim-range"></div>
+            <div id="segmentMarkers"></div>
+            <div id="playhead" class="playhead" hidden></div>
+            <div id="handleStart" class="trim-handle" tabindex="0"></div>
+            <div id="handleEnd" class="trim-handle" tabindex="0"></div>
+          </div>
+
+          <label class="speed-label">
+            Vitesse de ce morceau
+            <select id="segmentSpeed">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1">1x (normal)</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5" selected>1.5x</option>
+              <option value="2">2x</option>
+              <option value="3">3x</option>
+              <option value="4">4x</option>
+            </select>
+          </label>
+
+          <div class="btn-row">
+            <button id="previewBtn" class="btn-secondary" disabled><span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.7v10.6a.5.5 0 0 0 .77.42l8.4-5.3a.5.5 0 0 0 0-.84l-8.4-5.3a.5.5 0 0 0-.77.42z"/></svg></span> Prévisualiser</button>
+            <button id="addSegmentBtn" class="btn-secondary" disabled><span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg></span> Ajouter ce morceau</button>
+          </div>
+
+          <div id="segmentsList" class="segments-list">
+            <div class="segments-empty">Aucun morceau ajouté.</div>
+          </div>
+        </div>
+      </div>
+
+      <button id="applyBtn" class="btn-primary" disabled>
+        <span class="icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l5 4-5 4"/><path d="M9 4l5 4-5 4"/></svg></span> Appliquer la vitesse
+      </button>
+      <div id="status" class="status"></div>
+      <div id="info" class="info-list"></div>
+    </section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/icons.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/speed.js"></script>
+{% endblock %}
