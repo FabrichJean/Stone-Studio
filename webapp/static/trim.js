@@ -11,6 +11,7 @@ const status = document.getElementById("status");
 const track = document.getElementById("trimTrack");
 const range = document.getElementById("trimRange");
 const segmentMarkers = document.getElementById("segmentMarkers");
+const playhead = document.getElementById("playhead");
 const handleStart = document.getElementById("handleStart");
 const handleEnd = document.getElementById("handleEnd");
 const startLabel = document.getElementById("startLabel");
@@ -84,10 +85,29 @@ function handleFile(file) {
     trimBtn.disabled = false;
     previewBtn.disabled = false;
     addSegmentBtn.disabled = false;
+    playhead.hidden = false;
+    updatePlayhead();
   };
 
   dropzone.querySelector(".dropzone-title").textContent = file.name;
 }
+
+function updatePlayhead() {
+  if (!mediaDuration) return;
+  const pct = (preview.currentTime / mediaDuration) * 100;
+  playhead.style.left = `${pct}%`;
+}
+
+function tickPlayhead() {
+  updatePlayhead();
+  if (!preview.paused && !preview.ended) {
+    requestAnimationFrame(tickPlayhead);
+  }
+}
+
+preview.addEventListener("play", () => requestAnimationFrame(tickPlayhead));
+preview.addEventListener("timeupdate", updatePlayhead);
+preview.addEventListener("seeking", updatePlayhead);
 
 function updateUI() {
   const startPct = (startTime / mediaDuration) * 100;
