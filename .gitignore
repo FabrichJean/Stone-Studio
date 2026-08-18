@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Uploads & sorties générées
+uploads/*
+output/*
+!uploads/.gitkeep
+!output/.gitkeep
+
+# Fichiers média (tests locaux)
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.mp3
+*.wav
+*.flac
+*.aac
+
+# OS / éditeurs
+.DS_Store
+.vscode/
