@@ -15,16 +15,22 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "tools" / "extract_audio"))
 sys.path.insert(0, str(ROOT / "tools" / "trim_media"))
+sys.path.insert(0, str(ROOT / "tools" / "speed_media"))
 from extract_audio import FORMATS, extract_audio  # noqa: E402
+from media_utils import generate_thumbnail, probe_media  # noqa: E402
+from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
 
 UPLOADS_DIR = ROOT / "uploads"
 OUTPUT_DIR = ROOT / "output"
+THUMBS_DIR = ROOT / "thumbnails"
 PROJECTS_FILE = ROOT / "projects.json"
 UPLOADS_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+THUMBS_DIR.mkdir(exist_ok=True)
 
 DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 
@@ -33,9 +39,10 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 TOOL_LABELS = {
-    "upload": ("📥", "Fichier importé"),
-    "extract_audio": ("🎧", "Extraction audio"),
-    "trim_media": ("✂", "Trim media"),
+    "upload": "Fichier importé",
+    "extract_audio": "Extraction audio",
+    "trim_media": "Trim media",
+    "speed_media": "Speed",
 }
 
 
@@ -48,14 +55,22 @@ def load_projects() -> list[dict]:
 def save_project(
     tool: str, input_name: str | None, output_dir: str, output_file: str, output_name: str
 ) -> None:
-    icon, label = TOOL_LABELS[tool]
-    output_size = (DIRS[output_dir] / output_file).stat().st_size
+    label = TOOL_LABELS[tool]
+    file_path = DIRS[output_dir] / output_file
+    output_size = file_path.stat().st_size
+
+    media_info = probe_media(file_path)
+    project_id = Path(output_file).stem
+
+    has_thumbnail = False
+    if media_info["media_type"] == "video":
+        thumb_path = THUMBS_DIR / f"{project_id}.jpg"
+        has_thumbnail = generate_thumbnail(file_path, thumb_path, media_info["duration"])
 
     projects = load_projects()
     projects.insert(0, {
-        "id": Path(output_file).stem,
+        "id": project_id,
         "tool": tool,
-        "tool_icon": icon,
         "tool_label": label,
         "is_source": tool == "upload",
         "input_name": input_name,
@@ -63,6 +78,11 @@ def save_project(
         "output_file": output_file,
         "output_name": output_name,
         "output_size": output_size,
+        "media_type": media_info["media_type"],
+        "duration": media_info["duration"],
+        "width": media_info["width"],
+        "height": media_info["height"],
+        "has_thumbnail": has_thumbnail,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
@@ -76,6 +96,11 @@ def index(request: Request):
 @app.get("/trim")
 def trim_page(request: Request):
     return templates.TemplateResponse(request, "trim.html", {"active_tool": "trim_media"})
+
+
+@app.get("/speed")
+def speed_page(request: Request):
+    return templates.TemplateResponse(request, "speed.html", {"active_tool": "speed_media"})
 
 
 @app.get("/projects")
@@ -101,6 +126,14 @@ def download_project(project_id: str):
         raise HTTPException(404, "Fichier introuvable")
 
     return FileResponse(path, filename=record["output_name"], media_type="application/octet-stream")
+
+
+@app.get("/api/projects/{project_id}/thumbnail")
+def project_thumbnail(project_id: str):
+    path = THUMBS_DIR / f"{project_id}.jpg"
+    if not path.exists():
+        raise HTTPException(404, "Pas de miniature")
+    return FileResponse(path, media_type="image/jpeg")
 
 
 @app.post("/api/extract-audio")
@@ -176,5 +209,60 @@ async def api_trim_media(
     suffix_label = "trim" if len(pairs) == 1 else "combined"
     output_name = f"{stem}_{suffix_label}{suffix}"
     save_project("trim_media", media.filename, "output", output_file, output_name)
+
+    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+
+
+@app.post("/api/speed-media")
+async def api_speed_media(
+    media: UploadFile = File(...),
+    mode: str = Form(...),  # "global" | "segments"
+    factor: float | None = Form(None),
+    segments: str | None = Form(None),  # JSON: [{"start","end","factor"}, ...]
+):
+    if mode not in ("global", "segments"):
+        raise HTTPException(400, "Mode invalide (global ou segments).")
+
+    job_id = uuid.uuid4().hex
+    suffix = Path(media.filename).suffix
+    media_file = f"{job_id}_{media.filename}"
+    media_path = UPLOADS_DIR / media_file
+    output_file = f"{job_id}{suffix}"
+    output_path = OUTPUT_DIR / output_file
+
+    with media_path.open("wb") as f:
+        shutil.copyfileobj(media.file, f)
+    save_project("upload", None, "uploads", media_file, media.filename)
+
+    try:
+        if mode == "global":
+            if not factor or factor <= 0:
+                raise HTTPException(400, "Facteur de vitesse invalide.")
+            change_speed(media_path, output_path, factor)
+        else:
+            try:
+                seg_list = json.loads(segments or "[]")
+            except json.JSONDecodeError as e:
+                raise HTTPException(400, "Le champ 'segments' doit être un JSON valide.") from e
+
+            if not isinstance(seg_list, list) or not seg_list:
+                raise HTTPException(400, "Au moins un segment est requis.")
+
+            pairs = []
+            for seg in seg_list:
+                start, end, seg_factor = seg.get("start"), seg.get("end"), seg.get("factor")
+                if not is_valid_time(start or "") or not is_valid_time(end or ""):
+                    raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
+                if not seg_factor or seg_factor <= 0:
+                    raise HTTPException(400, "Facteur de vitesse invalide dans un des segments.")
+                pairs.append({"start": start, "end": end, "factor": float(seg_factor)})
+
+            speed_segments(media_path, pairs, output_path)
+    except RuntimeError as e:
+        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+
+    stem = Path(media.filename).stem
+    output_name = f"{stem}_speed{suffix}"
+    save_project("speed_media", media.filename, "output", output_file, output_name)
 
     return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")

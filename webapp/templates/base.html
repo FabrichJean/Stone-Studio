@@ -10,7 +10,9 @@
 <div class="layout">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-logo">✳</div>
+      <div class="brand-logo">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.2l1.6 4.2 4.2 1.6-4.2 1.6L8 12.8l-1.6-4.2-4.2-1.6 4.2-1.6z"/></svg>
+      </div>
       <div>
         <div class="brand-name">Stone Studio</div>
         <div class="brand-sub">Content Creation Suite</div>
@@ -20,26 +22,69 @@
     <div class="sidebar-divider"></div>
 
     <nav class="nav">
-      <a class="nav-item" href="#">⌂ Accueil</a>
+      <a class="nav-item" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5L8 2.5l6 5"/><path d="M4 6.5V13h3v-3.5h2V13h3V6.5"/></svg></span>
+        Accueil
+      </a>
 
       <div class="nav-section-label">Outils</div>
-      <a class="nav-item {{ 'active' if active_tool == 'extract_audio' else '' }}" href="/">♪ Extraction audio</a>
-      <a class="nav-item {{ 'active' if active_tool == 'trim_media' else '' }}" href="/trim">✂ Trim media</a>
-      <a class="nav-item disabled" href="#">⛁ Compression vidéo</a>
-      <a class="nav-item disabled" href="#">⇄ Conversion vidéo</a>
-      <a class="nav-item disabled" href="#">▷ Fusion vidéo</a>
-      <a class="nav-item disabled" href="#">▤ Sous-titres auto</a>
-      <a class="nav-item disabled" href="#">♫ Suppression bruit</a>
-      <a class="nav-item disabled" href="#">▭ Enregistrement écran</a>
+      <a class="nav-item {{ 'active' if active_tool == 'extract_audio' else '' }}" href="/">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V8a6 6 0 0 1 12 0v1"/><rect x="1.5" y="9" width="3" height="4" rx="1"/><rect x="11.5" y="9" width="3" height="4" rx="1"/></svg></span>
+        Extraction audio
+      </a>
+      <a class="nav-item {{ 'active' if active_tool == 'trim_media' else '' }}" href="/trim">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><path d="M5.3 5L14 14M5.3 11L14 2"/></svg></span>
+        Trim media
+      </a>
+      <a class="nav-item {{ 'active' if active_tool == 'speed_media' else '' }}" href="/speed">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l5 4-5 4"/><path d="M9 4l5 4-5 4"/></svg></span>
+        Speed
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg></span>
+        Compression vidéo
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 4H5a2.5 2.5 0 0 0-2.5 2.5V7"/><path d="M4.5 12H11a2.5 2.5 0 0 0 2.5-2.5V9"/><path d="M9.5 1.5L11.5 4l-2 2.5"/><path d="M6.5 14.5l-2-2.5 2-2.5"/></svg></span>
+        Conversion vidéo
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V3"/><path d="M8 8v5"/><path d="M6 11l2 2 2-2"/></svg></span>
+        Fusion vidéo
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="12" height="8" rx="1.5"/><path d="M4.5 7.5h2.5M8.5 7.5h3M4.5 9.5h5.5"/></svg></span>
+        Sous-titres auto
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h2l2-4v8l2-4h2l2 3v-6l2 3"/></svg></span>
+        Suppression bruit
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+        Enregistrement écran
+      </a>
 
       <div class="nav-section-label">Projets</div>
-      <a class="nav-item {{ 'active' if active_tool == 'projects' else '' }}" href="/projects">▢ Mes projets</a>
-      <a class="nav-item disabled" href="#">◷ Fichiers récents</a>
-      <a class="nav-item disabled" href="#">▤ Exports</a>
+      <a class="nav-item {{ 'active' if active_tool == 'projects' else '' }}" href="/projects">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.5h5.2A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7z"/></svg></span>
+        Mes projets
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.2l2.2 1.6"/></svg></span>
+        Fichiers récents
+      </a>
+      <a class="nav-item disabled" href="#">
+        <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4.5 2h4.5l3 3v9h-7.5z"/><path d="M9 2v3h3"/></svg></span>
+        Exports
+      </a>
     </nav>
 
     <div class="pro-card">
-      <div class="pro-card-title">♛ Passez en Pro</div>
+      <div class="pro-card-title">
+        <span class="icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12h11"/><path d="M3 12L2 6.5l3 2.3L8 4.5l3 4.3 3-2.3-1 5.5"/></svg></span>
+        Passez en Pro
+      </div>
       <p>Accédez à toutes les fonctionnalités sans limites.</p>
       <button class="pro-card-btn">Découvrir</button>
     </div>
