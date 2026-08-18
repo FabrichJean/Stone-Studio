@@ -2,7 +2,7 @@
 {% block content %}
     <header class="page-header">
       <h1>✂ Trim media</h1>
-      <p>Découpez un segment d'un fichier audio ou vidéo.</p>
+      <p>Découpez plusieurs morceaux d'un fichier, puis combinez-les en un seul.</p>
     </header>
 
     <section class="panel trim-panel">
@@ -19,6 +19,7 @@
       </div>
 
       <div class="params">
+        <h3>Morceau en cours de sélection</h3>
         <div class="trim-times">
           <span id="startLabel">00:00:00</span>
           <span id="durationLabel" class="trim-duration">sélectionnez un fichier</span>
@@ -27,11 +28,22 @@
 
         <div id="trimTrack" class="trim-track">
           <div id="trimRange" class="trim-range"></div>
+          <div id="segmentMarkers"></div>
           <div id="handleStart" class="trim-handle" tabindex="0"></div>
           <div id="handleEnd" class="trim-handle" tabindex="0"></div>
         </div>
 
-        <button id="previewBtn" class="btn-secondary" disabled>▶ Prévisualiser le segment</button>
+        <div class="btn-row">
+          <button id="previewBtn" class="btn-secondary" disabled>▶ Prévisualiser</button>
+          <button id="addSegmentBtn" class="btn-secondary" disabled>+ Ajouter ce morceau</button>
+        </div>
+      </div>
+
+      <div class="params">
+        <h3>Morceaux à combiner</h3>
+        <div id="segmentsList" class="segments-list">
+          <div class="segments-empty">Aucun morceau ajouté — le bouton ci-dessous exportera la sélection en cours.</div>
+        </div>
       </div>
 
       <button id="trimBtn" class="btn-primary" disabled>✂ Découper</button>
