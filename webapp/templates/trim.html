@@ -1,17 +1,33 @@
 {% extends "base.html" %}
 {% block content %}
     <header class="page-header">
-      <h1>✂ Trim media</h1>
+      <h1><span class="icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><path d="M5.3 5L14 14M5.3 11L14 2"/></svg></span> Trim media</h1>
       <p>Découpez plusieurs morceaux d'un fichier, puis combinez-les en un seul.</p>
     </header>
 
     <section class="panel trim-panel">
       <div id="dropzone" class="dropzone">
-        <div class="dropzone-icon">▶</div>
+        <div class="dropzone-icon"><svg width="28" height="28" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.7v10.6a.5.5 0 0 0 .77.42l8.4-5.3a.5.5 0 0 0 0-.84l-8.4-5.3a.5.5 0 0 0-.77.42z"/></svg></div>
         <div class="dropzone-title">Glissez votre fichier ici</div>
         <div class="dropzone-sub">ou <span class="link">cliquez pour parcourir</span> · <span class="link" id="pickProjectLink">choisir depuis mes projets</span></div>
         <div class="dropzone-hint">MP4, MOV, MP3, WAV et plus</div>
         <input id="fileInput" type="file" accept="video/*,audio/*" hidden />
+      </div>
+
+      <div id="projectPicker" class="project-picker" hidden>
+        <div class="picker-inline-header">
+          <input type="text" id="pickerSearch" placeholder="Rechercher un fichier..." autocomplete="off" />
+          <div class="view-toggle" id="pickerViewToggle">
+            <button type="button" class="view-toggle-btn" data-view="list" title="Vue liste">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 4.5H13M3 8H13M3 11.5H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" class="view-toggle-btn" data-view="card" title="Vue cartes">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="2" y="9" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <button type="button" class="picker-back" id="pickerBack">Annuler</button>
+        </div>
+        <div id="pickerList" class="picker-inline-list"></div>
       </div>
 
       <div id="videoStage" class="video-stage" hidden>
@@ -35,8 +51,8 @@
         </div>
 
         <div class="btn-row">
-          <button id="previewBtn" class="btn-secondary" disabled>▶ Prévisualiser</button>
-          <button id="addSegmentBtn" class="btn-secondary" disabled>+ Ajouter ce morceau</button>
+          <button id="previewBtn" class="btn-secondary" disabled><span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.7v10.6a.5.5 0 0 0 .77.42l8.4-5.3a.5.5 0 0 0 0-.84l-8.4-5.3a.5.5 0 0 0-.77.42z"/></svg></span> Prévisualiser</button>
+          <button id="addSegmentBtn" class="btn-secondary" disabled><span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg></span> Ajouter ce morceau</button>
         </div>
       </div>
 
@@ -47,12 +63,13 @@
         </div>
       </div>
 
-      <button id="trimBtn" class="btn-primary" disabled>✂ Découper</button>
+      <button id="trimBtn" class="btn-primary" disabled><span class="icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><path d="M5.3 5L14 14M5.3 11L14 2"/></svg></span> Découper</button>
       <div id="status" class="status"></div>
       <div id="info" class="info-list"></div>
     </section>
 {% endblock %}
 {% block scripts %}
+<script src="/static/icons.js"></script>
 <script src="/static/common.js"></script>
 <script src="/static/trim.js"></script>
 {% endblock %}
