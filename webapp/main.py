@@ -289,6 +289,7 @@ async def api_orientation(
     actions: str | None = Form(None),  # JSON: ["rotate_90_cw", "flip_horizontal"] (mode=global)
     segments: str | None = Form(None),  # JSON: [{"start","end","actions":[...]}, ...] (mode=segments)
     aspect_ratio: str | None = Form(None),  # ex: "portrait_9_16" — appliqué après l'orientation
+    aspect_position: float = Form(0.5),  # 0..1 — position du recadrage le long de l'axe rogné
 ):
     if mode not in ("global", "segments"):
         raise HTTPException(400, "Mode invalide (global ou segments).")
@@ -354,7 +355,7 @@ async def api_orientation(
             orient_segments(video_path, pairs, target)
 
         if aspect_ratio:
-            apply_aspect_ratio(target, output_path, aspect_ratio)
+            apply_aspect_ratio(target, output_path, aspect_ratio, aspect_position)
             intermediate_path.unlink(missing_ok=True)
     except RuntimeError as e:
         raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
