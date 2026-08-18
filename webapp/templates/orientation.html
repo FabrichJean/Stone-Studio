@@ -2,7 +2,7 @@
 {% block content %}
     <header class="page-header">
       <h1><span class="icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg></span> Orientation</h1>
-      <p>Faites pivoter ou inversez une vidéo.</p>
+      <p>Faites pivoter ou inversez une vidéo, globalement ou morceau par morceau.</p>
     </header>
 
     <section class="panel trim-panel">
@@ -34,29 +34,84 @@
         <video id="preview" controls></video>
       </div>
 
-      <div id="actionsSection" class="params" hidden>
-        <h3>Action</h3>
-        <div class="orientation-grid">
-          <button type="button" class="orientation-btn" data-action="rotate_90_ccw">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 5.8A5 5 0 1 1 3 8"/><path d="M3.2 2.5v3.3h3.3"/></svg>
-            <span>Rotation 90° antihoraire</span>
-          </button>
-          <button type="button" class="orientation-btn" data-action="rotate_90_cw">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg>
-            <span>Rotation 90° horaire</span>
-          </button>
-          <button type="button" class="orientation-btn" data-action="rotate_180">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12"/><path d="M5 5L2 8l3 3"/><path d="M11 5l3 3-3 3"/></svg>
-            <span>Rotation 180°</span>
-          </button>
-          <button type="button" class="orientation-btn" data-action="flip_horizontal">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v13"/><path d="M4.5 5L2 8l2.5 3"/><path d="M11.5 5L14 8l-2.5 3"/></svg>
-            <span>Miroir horizontal</span>
-          </button>
-          <button type="button" class="orientation-btn" data-action="flip_vertical">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8h13"/><path d="M5 4.5L8 2l3 2.5"/><path d="M5 11.5L8 14l3-2.5"/></svg>
-            <span>Miroir vertical</span>
-          </button>
+      <div id="modeSection" class="params" hidden>
+        <div class="mode-toggle" id="modeToggle">
+          <button type="button" class="mode-toggle-btn active" data-mode="global">Orientation globale</button>
+          <button type="button" class="mode-toggle-btn" data-mode="segments">Par morceau</button>
+        </div>
+
+        <div id="globalPanel" class="speed-panel">
+          <div class="orientation-grid" id="globalActions">
+            <button type="button" class="orientation-btn" data-action="rotate_90_ccw">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 5.8A5 5 0 1 1 3 8"/><path d="M3.2 2.5v3.3h3.3"/></svg>
+              <span>Rotation 90° antihoraire</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="rotate_90_cw">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg>
+              <span>Rotation 90° horaire</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="rotate_180">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12"/><path d="M5 5L2 8l3 3"/><path d="M11 5l3 3-3 3"/></svg>
+              <span>Rotation 180°</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="flip_horizontal">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v13"/><path d="M4.5 5L2 8l2.5 3"/><path d="M11.5 5L14 8l-2.5 3"/></svg>
+              <span>Miroir horizontal</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="flip_vertical">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8h13"/><path d="M5 4.5L8 2l3 2.5"/><path d="M5 11.5L8 14l3-2.5"/></svg>
+              <span>Miroir vertical</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="segmentsPanel" class="speed-panel" hidden>
+          <h3>Morceau en cours de sélection</h3>
+          <div class="trim-times">
+            <span id="startLabel">00:00:00</span>
+            <span id="durationLabel" class="trim-duration">sélectionnez un fichier</span>
+            <span id="endLabel">00:00:00</span>
+          </div>
+
+          <div id="trimTrack" class="trim-track">
+            <div id="trimRange" class="trim-range"></div>
+            <div id="segmentMarkers"></div>
+            <div id="playhead" class="playhead" hidden></div>
+            <div id="handleStart" class="trim-handle" tabindex="0"></div>
+            <div id="handleEnd" class="trim-handle" tabindex="0"></div>
+          </div>
+
+          <div class="orientation-grid" id="segmentActions">
+            <button type="button" class="orientation-btn" data-action="rotate_90_ccw">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 5.8A5 5 0 1 1 3 8"/><path d="M3.2 2.5v3.3h3.3"/></svg>
+              <span>Rotation 90° antihoraire</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="rotate_90_cw">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg>
+              <span>Rotation 90° horaire</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="rotate_180">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12"/><path d="M5 5L2 8l3 3"/><path d="M11 5l3 3-3 3"/></svg>
+              <span>Rotation 180°</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="flip_horizontal">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v13"/><path d="M4.5 5L2 8l2.5 3"/><path d="M11.5 5L14 8l-2.5 3"/></svg>
+              <span>Miroir horizontal</span>
+            </button>
+            <button type="button" class="orientation-btn" data-action="flip_vertical">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8h13"/><path d="M5 4.5L8 2l3 2.5"/><path d="M5 11.5L8 14l3-2.5"/></svg>
+              <span>Miroir vertical</span>
+            </button>
+          </div>
+
+          <div class="btn-row">
+            <button id="previewBtn" class="btn-secondary" disabled><span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.7v10.6a.5.5 0 0 0 .77.42l8.4-5.3a.5.5 0 0 0 0-.84l-8.4-5.3a.5.5 0 0 0-.77.42z"/></svg></span> Prévisualiser</button>
+            <button id="addSegmentBtn" class="btn-secondary" disabled><span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg></span> Ajouter ce morceau</button>
+          </div>
+
+          <div id="segmentsList" class="segments-list">
+            <div class="segments-empty">Aucun morceau ajouté.</div>
+          </div>
         </div>
       </div>
 
