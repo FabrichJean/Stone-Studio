@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "tools" / "speed_media"))
 sys.path.insert(0, str(ROOT / "tools" / "orientation"))
 from extract_audio import FORMATS, extract_audio  # noqa: E402
 from media_utils import generate_thumbnail, probe_media  # noqa: E402
-from orientation import ACTIONS as ORIENTATION_ACTIONS, change_orientation  # noqa: E402
+from orientation import ACTIONS as ORIENTATION_ACTIONS, change_orientation, orient_segments  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
 
@@ -279,10 +279,12 @@ async def api_speed_media(
 @app.post("/api/orientation")
 async def api_orientation(
     video: UploadFile = File(...),
-    action: str = Form(...),
+    mode: str = Form(...),  # "global" | "segments"
+    actions: str | None = Form(None),  # JSON: ["rotate_90_cw", "flip_horizontal"] (mode=global)
+    segments: str | None = Form(None),  # JSON: [{"start","end","actions":[...]}, ...] (mode=segments)
 ):
-    if action not in ORIENTATION_ACTIONS:
-        raise HTTPException(400, f"Action non supportée : {action}")
+    if mode not in ("global", "segments"):
+        raise HTTPException(400, "Mode invalide (global ou segments).")
 
     job_id = uuid.uuid4().hex
     suffix = Path(video.filename).suffix
@@ -296,7 +298,41 @@ async def api_orientation(
     save_project("upload", None, "uploads", video_file, video.filename)
 
     try:
-        change_orientation(video_path, output_path, action)
+        if mode == "global":
+            try:
+                action_list = json.loads(actions or "[]")
+            except json.JSONDecodeError as e:
+                raise HTTPException(400, "Le champ 'actions' doit être un JSON valide.") from e
+
+            if not isinstance(action_list, list) or not action_list:
+                raise HTTPException(400, "Au moins une action est requise.")
+            for a in action_list:
+                if a not in ORIENTATION_ACTIONS:
+                    raise HTTPException(400, f"Action non supportée : {a}")
+
+            change_orientation(video_path, output_path, action_list)
+        else:
+            try:
+                seg_list = json.loads(segments or "[]")
+            except json.JSONDecodeError as e:
+                raise HTTPException(400, "Le champ 'segments' doit être un JSON valide.") from e
+
+            if not isinstance(seg_list, list) or not seg_list:
+                raise HTTPException(400, "Au moins un segment est requis.")
+
+            pairs = []
+            for seg in seg_list:
+                start, end, seg_actions = seg.get("start"), seg.get("end"), seg.get("actions")
+                if not is_valid_time(start or "") or not is_valid_time(end or ""):
+                    raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
+                if not isinstance(seg_actions, list) or not seg_actions:
+                    raise HTTPException(400, "Chaque segment doit avoir au moins une action.")
+                for a in seg_actions:
+                    if a not in ORIENTATION_ACTIONS:
+                        raise HTTPException(400, f"Action non supportée dans un segment : {a}")
+                pairs.append({"start": start, "end": end, "actions": seg_actions})
+
+            orient_segments(video_path, pairs, output_path)
     except RuntimeError as e:
         raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
 
