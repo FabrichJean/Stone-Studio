@@ -19,6 +19,9 @@ output/*
 *.flac
 *.aac
 
+# Données locales
+projects.json
+
 # OS / éditeurs
 .DS_Store
 .vscode/

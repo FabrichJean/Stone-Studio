@@ -33,9 +33,9 @@
       <a class="nav-item disabled" href="#">▭ Enregistrement écran</a>
 
       <div class="nav-section-label">Projets</div>
-      <a class="nav-item" href="#">▢ Mes projets</a>
-      <a class="nav-item" href="#">◷ Fichiers récents</a>
-      <a class="nav-item" href="#">▤ Exports</a>
+      <a class="nav-item {{ 'active' if active_tool == 'projects' else '' }}" href="/projects">▢ Mes projets</a>
+      <a class="nav-item disabled" href="#">◷ Fichiers récents</a>
+      <a class="nav-item disabled" href="#">▤ Exports</a>
     </nav>
 
     <div class="pro-card">
