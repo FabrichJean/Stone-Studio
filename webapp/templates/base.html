@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Stone Studio</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">✳</div>
+      <div>
+        <div class="brand-name">Stone Studio</div>
+        <div class="brand-sub">Content Creation Suite</div>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <nav class="nav">
+      <a class="nav-item" href="#">⌂ Accueil</a>
+
+      <div class="nav-section-label">Outils</div>
+      <a class="nav-item {{ 'active' if active_tool == 'extract_audio' else '' }}" href="/">♪ Extraction audio</a>
+      <a class="nav-item {{ 'active' if active_tool == 'trim_media' else '' }}" href="/trim">✂ Trim media</a>
+      <a class="nav-item disabled" href="#">⛁ Compression vidéo</a>
+      <a class="nav-item disabled" href="#">⇄ Conversion vidéo</a>
+      <a class="nav-item disabled" href="#">▷ Fusion vidéo</a>
+      <a class="nav-item disabled" href="#">▤ Sous-titres auto</a>
+      <a class="nav-item disabled" href="#">♫ Suppression bruit</a>
+      <a class="nav-item disabled" href="#">▭ Enregistrement écran</a>
+
+      <div class="nav-section-label">Projets</div>
+      <a class="nav-item" href="#">▢ Mes projets</a>
+      <a class="nav-item" href="#">◷ Fichiers récents</a>
+      <a class="nav-item" href="#">▤ Exports</a>
+    </nav>
+
+    <div class="pro-card">
+      <div class="pro-card-title">♛ Passez en Pro</div>
+      <p>Accédez à toutes les fonctionnalités sans limites.</p>
+      <button class="pro-card-btn">Découvrir</button>
+    </div>
+  </aside>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>
