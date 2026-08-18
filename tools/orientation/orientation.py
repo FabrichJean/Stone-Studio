@@ -99,14 +99,22 @@ def change_orientation(
         raise RuntimeError(result.stderr.strip())
 
 
-def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str) -> None:
-    """Recadre (crop centré, sans déformation) au format d'affichage choisi."""
+def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str, pos: float = 0.5) -> None:
+    """Recadre (crop, sans déformation) au format d'affichage choisi.
+
+    `pos` (0..1) place le recadrage le long de l'axe rogné : 0 = gauche/haut,
+    0.5 = centré (défaut), 1 = droite/bas.
+    """
     if ratio_key not in ASPECT_RATIOS:
         raise ValueError(f"Format inconnu : {ratio_key}. Choix possibles : {', '.join(ASPECT_RATIOS)}")
 
+    pos = max(0.0, min(1.0, pos))
     rw, rh = ASPECT_RATIOS[ratio_key]
     r = rw / rh
-    crop_filter = f"crop=w='if(gt(iw/ih,{r}),ih*{r},iw)':h='if(gt(iw/ih,{r}),ih,iw/{r})'"
+    crop_filter = (
+        f"crop=w='if(gt(iw/ih,{r}),ih*{r},iw)':h='if(gt(iw/ih,{r}),ih,iw/{r})':"
+        f"x='(iw-out_w)*{pos}':y='(ih-out_h)*{pos}'"
+    )
 
     cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
