@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+    <header class="page-header">
+      <h1>🎧 Extraction audio</h1>
+      <p>Extrayez l'audio de n'importe quelle vidéo en haute qualité.</p>
+    </header>
+
+    <div class="panels">
+      <section class="panel">
+        <div id="dropzone" class="dropzone">
+          <div class="dropzone-icon">▶</div>
+          <div class="dropzone-title">Glissez votre vidéo ici</div>
+          <div class="dropzone-sub">ou <span class="link">cliquez pour parcourir</span></div>
+          <div class="dropzone-hint">MP4, MOV, AVI, MKV et plus</div>
+          <input id="fileInput" type="file" accept="video/*" hidden />
+        </div>
+
+        <div class="params">
+          <h3>Paramètres</h3>
+          <div class="params-grid">
+            <label>
+              Format audio
+              <select id="format">
+                <option value="mp3">MP3</option>
+                <option value="wav">WAV</option>
+                <option value="aac">AAC</option>
+                <option value="flac">FLAC</option>
+              </select>
+            </label>
+            <label>
+              Bitrate
+              <select id="bitrate">
+                <option value="320k">Haute (320 kbps)</option>
+                <option value="256k">256 kbps</option>
+                <option value="192k">192 kbps</option>
+                <option value="128k">128 kbps</option>
+              </select>
+            </label>
+            <label>
+              Canaux
+              <select id="channels">
+                <option value="stereo">Stéréo</option>
+                <option value="mono">Mono</option>
+              </select>
+            </label>
+            <label>
+              Fréquence d'échantillonnage
+              <select id="sampleRate">
+                <option value="44100">44.1 kHz</option>
+                <option value="48000">48 kHz</option>
+                <option value="22050">22.05 kHz</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <button id="extractBtn" class="btn-primary" disabled>🎧 Extraire l'audio</button>
+        <div id="status" class="status"></div>
+      </section>
+
+      <section id="sidePanel" class="panel side-panel" hidden>
+        <h3>Aperçu de la vidéo</h3>
+        <video id="preview" controls></video>
+        <div id="info" class="info-list"></div>
+      </section>
+    </div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/app.js"></script>
+{% endblock %}
