@@ -5,15 +5,18 @@ const preview = document.getElementById("preview");
 const info = document.getElementById("info");
 const trimBtn = document.getElementById("trimBtn");
 const previewBtn = document.getElementById("previewBtn");
+const addSegmentBtn = document.getElementById("addSegmentBtn");
 const status = document.getElementById("status");
 
 const track = document.getElementById("trimTrack");
 const range = document.getElementById("trimRange");
+const segmentMarkers = document.getElementById("segmentMarkers");
 const handleStart = document.getElementById("handleStart");
 const handleEnd = document.getElementById("handleEnd");
 const startLabel = document.getElementById("startLabel");
 const endLabel = document.getElementById("endLabel");
 const durationLabel = document.getElementById("durationLabel");
+const segmentsList = document.getElementById("segmentsList");
 
 let selectedFile = null;
 let mediaDuration = 0;
@@ -21,6 +24,7 @@ let startTime = 0;
 let endTime = 0;
 let dragging = null; // "start" | "end" | null
 let previewStopHandler = null;
+let segments = []; // [{ start: seconds, end: seconds }]
 
 dropzone.addEventListener("click", () => fileInput.click());
 
@@ -57,6 +61,8 @@ function handleFile(file) {
   selectedFile = file;
   status.textContent = "";
   status.className = "status";
+  segments = [];
+  renderSegments();
 
   const url = URL.createObjectURL(file);
   preview.src = url;
@@ -77,6 +83,7 @@ function handleFile(file) {
     updateUI();
     trimBtn.disabled = false;
     previewBtn.disabled = false;
+    addSegmentBtn.disabled = false;
   };
 
   dropzone.querySelector(".dropzone-title").textContent = file.name;
@@ -94,6 +101,59 @@ function updateUI() {
   startLabel.textContent = secondsToTimestamp(startTime);
   endLabel.textContent = secondsToTimestamp(endTime);
   durationLabel.textContent = `durée : ${secondsToTimestamp(endTime - startTime)}`;
+}
+
+function renderSegmentMarkers() {
+  segmentMarkers.innerHTML = "";
+  segments.forEach((seg) => {
+    const marker = document.createElement("div");
+    marker.className = "segment-marker";
+    marker.style.left = `${(seg.start / mediaDuration) * 100}%`;
+    marker.style.width = `${((seg.end - seg.start) / mediaDuration) * 100}%`;
+    segmentMarkers.appendChild(marker);
+  });
+}
+
+function renderSegments() {
+  renderSegmentMarkers();
+
+  if (segments.length === 0) {
+    segmentsList.innerHTML = `<div class="segments-empty">Aucun morceau ajouté — le bouton ci-dessous exportera la sélection en cours.</div>`;
+    trimBtn.textContent = "✂ Découper";
+    previewBtn.textContent = "▶ Prévisualiser";
+    return;
+  }
+
+  segmentsList.innerHTML = segments
+    .map(
+      (seg, i) => `
+      <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
+        <span>
+          <span class="segment-label">${i + 1}. ${secondsToTimestamp(seg.start)} → ${secondsToTimestamp(seg.end)}</span>
+          <span class="segment-duration">(${secondsToTimestamp(seg.end - seg.start)})</span>
+        </span>
+        <button class="segment-remove" data-index="${i}" title="Retirer">✕</button>
+      </div>`
+    )
+    .join("");
+
+  segmentsList.querySelectorAll(".segment-item").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target.classList.contains("segment-remove")) return;
+      const seg = segments[Number(el.dataset.index)];
+      playRanges([seg]);
+    });
+  });
+
+  segmentsList.querySelectorAll(".segment-remove").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      segments.splice(Number(btn.dataset.index), 1);
+      renderSegments();
+    });
+  });
+
+  trimBtn.textContent = segments.length > 1 ? "✂ Découper et combiner" : "✂ Découper";
+  previewBtn.textContent = segments.length > 1 ? "▶ Prévisualiser l'enchaînement" : "▶ Prévisualiser";
 }
 
 function positionToTime(clientX) {
@@ -152,37 +212,61 @@ track.addEventListener("pointerdown", (e) => {
   updateUI();
 });
 
-previewBtn.addEventListener("click", () => {
-  if (!mediaDuration) return;
+function playRanges(ranges) {
+  if (!mediaDuration || ranges.length === 0) return;
 
   if (previewStopHandler) {
     preview.removeEventListener("timeupdate", previewStopHandler);
+    previewStopHandler = null;
   }
 
-  preview.currentTime = startTime;
+  let i = 0;
+  preview.currentTime = ranges[0].start;
   preview.play();
 
   previewStopHandler = () => {
-    if (preview.currentTime >= endTime) {
+    if (preview.currentTime < ranges[i].end) return;
+
+    i += 1;
+    if (i >= ranges.length) {
       preview.pause();
       preview.removeEventListener("timeupdate", previewStopHandler);
       previewStopHandler = null;
+      return;
     }
+
+    preview.currentTime = ranges[i].start;
   };
   preview.addEventListener("timeupdate", previewStopHandler);
+}
+
+previewBtn.addEventListener("click", () => {
+  // Si des morceaux ont été ajoutés, prévisualise l'enchaînement complet (comme le rendu final).
+  // Sinon, prévisualise juste la sélection en cours sur la timeline.
+  playRanges(segments.length > 0 ? segments : [{ start: startTime, end: endTime }]);
+});
+
+addSegmentBtn.addEventListener("click", () => {
+  segments.push({ start: startTime, end: endTime });
+  segments.sort((a, b) => a.start - b.start);
+  renderSegments();
 });
 
 trimBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
 
+  const toExport = segments.length > 0 ? segments : [{ start: startTime, end: endTime }];
+
   trimBtn.disabled = true;
   status.className = "status";
-  status.textContent = "Découpage en cours...";
+  status.textContent = toExport.length > 1 ? "Découpage et combinaison en cours..." : "Découpage en cours...";
 
   const formData = new FormData();
   formData.append("media", selectedFile);
-  formData.append("start", secondsToTimestamp(startTime));
-  formData.append("end", secondsToTimestamp(endTime));
+  formData.append(
+    "segments",
+    JSON.stringify(toExport.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end) })))
+  );
 
   try {
     const res = await fetch("/api/trim-media", { method: "POST", body: formData });
@@ -194,13 +278,14 @@ trimBtn.addEventListener("click", async () => {
     const blob = await res.blob();
     const stem = selectedFile.name.replace(/\.[^/.]+$/, "");
     const ext = selectedFile.name.split(".").pop();
+    const suffix = toExport.length > 1 ? "combined" : "trim";
 
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `${stem}_trim.${ext}`;
+    a.download = `${stem}_${suffix}.${ext}`;
     a.click();
 
-    status.textContent = "Segment découpé avec succès.";
+    status.textContent = "Export réussi.";
     status.className = "status success";
   } catch (e) {
     status.textContent = `Erreur : ${e.message}`;
