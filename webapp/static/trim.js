@@ -140,13 +140,17 @@ function renderSegmentMarkers() {
   });
 }
 
+const SCISSORS_ICON = `<span class="icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><path d="M5.3 5L14 14M5.3 11L14 2"/></svg></span>`;
+const PLAY_ICON = `<span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.7v10.6a.5.5 0 0 0 .77.42l8.4-5.3a.5.5 0 0 0 0-.84l-8.4-5.3a.5.5 0 0 0-.77.42z"/></svg></span>`;
+const CLOSE_ICON = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>`;
+
 function renderSegments() {
   renderSegmentMarkers();
 
   if (segments.length === 0) {
     segmentsList.innerHTML = `<div class="segments-empty">Aucun morceau ajouté — le bouton ci-dessous exportera la sélection en cours.</div>`;
-    trimBtn.textContent = "✂ Découper";
-    previewBtn.textContent = "▶ Prévisualiser";
+    trimBtn.innerHTML = `${SCISSORS_ICON} Découper`;
+    previewBtn.innerHTML = `${PLAY_ICON} Prévisualiser`;
     return;
   }
 
@@ -158,14 +162,14 @@ function renderSegments() {
           <span class="segment-label">${i + 1}. ${secondsToTimestamp(seg.start)} → ${secondsToTimestamp(seg.end)}</span>
           <span class="segment-duration">(${secondsToTimestamp(seg.end - seg.start)})</span>
         </span>
-        <button class="segment-remove" data-index="${i}" title="Retirer">✕</button>
+        <button class="segment-remove" data-index="${i}" title="Retirer">${CLOSE_ICON}</button>
       </div>`
     )
     .join("");
 
   segmentsList.querySelectorAll(".segment-item").forEach((el) => {
     el.addEventListener("click", (e) => {
-      if (e.target.classList.contains("segment-remove")) return;
+      if (e.target.closest(".segment-remove")) return;
       const seg = segments[Number(el.dataset.index)];
       playRanges([seg]);
     });
@@ -178,8 +182,9 @@ function renderSegments() {
     });
   });
 
-  trimBtn.textContent = segments.length > 1 ? "✂ Découper et combiner" : "✂ Découper";
-  previewBtn.textContent = segments.length > 1 ? "▶ Prévisualiser l'enchaînement" : "▶ Prévisualiser";
+  trimBtn.innerHTML = segments.length > 1 ? `${SCISSORS_ICON} Découper et combiner` : `${SCISSORS_ICON} Découper`;
+  previewBtn.innerHTML =
+    segments.length > 1 ? `${PLAY_ICON} Prévisualiser l'enchaînement` : `${PLAY_ICON} Prévisualiser`;
 }
 
 function positionToTime(clientX) {
