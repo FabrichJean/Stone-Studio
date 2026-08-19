@@ -25,7 +25,6 @@ from media_utils import generate_thumbnail, probe_media  # noqa: E402
 from orientation import (  # noqa: E402
     ACTIONS as ORIENTATION_ACTIONS,
     ASPECT_RATIOS,
-    apply_aspect_ratio,
     change_orientation,
     orient_segments,
 )
@@ -287,8 +286,8 @@ async def api_orientation(
     video: UploadFile = File(...),
     mode: str = Form(...),  # "global" | "segments"
     actions: str | None = Form(None),  # JSON: ["rotate_90_cw", "flip_horizontal"] (mode=global)
-    segments: str | None = Form(None),  # JSON: [{"start","end","actions":[...]}, ...] (mode=segments)
-    aspect_ratio: str | None = Form(None),  # ex: "portrait_9_16" — appliqué après l'orientation
+    segments: str | None = Form(None),  # JSON: [{"start","end","actions":[...],"aspect_ratio","aspect_position"}, ...]
+    aspect_ratio: str | None = Form(None),  # ex: "portrait_9_16" (mode=global uniquement)
     aspect_position: float = Form(0.5),  # 0..1 — position du recadrage le long de l'axe rogné
 ):
     if mode not in ("global", "segments"):
@@ -302,15 +301,10 @@ async def api_orientation(
     video_path = UPLOADS_DIR / video_file
     output_file = f"{job_id}{suffix}"
     output_path = OUTPUT_DIR / output_file
-    intermediate_path = OUTPUT_DIR / f"{job_id}_pre{suffix}"
 
     with video_path.open("wb") as f:
         shutil.copyfileobj(video.file, f)
     save_project("upload", None, "uploads", video_file, video.filename)
-
-    # Si un format d'affichage est demandé, l'orientation écrit d'abord dans un fichier
-    # intermédiaire, puis le recadrage produit le fichier final dans output_path.
-    target = intermediate_path if aspect_ratio else output_path
 
     try:
         if mode == "global":
@@ -327,10 +321,7 @@ async def api_orientation(
             if not action_list and not aspect_ratio:
                 raise HTTPException(400, "Choisissez au moins une action ou un format d'affichage.")
 
-            if action_list:
-                change_orientation(video_path, target, action_list)
-            else:
-                shutil.copy(video_path, target)
+            change_orientation(video_path, output_path, action_list, aspect_ratio=aspect_ratio, aspect_position=aspect_position)
         else:
             try:
                 seg_list = json.loads(segments or "[]")
@@ -342,21 +333,29 @@ async def api_orientation(
 
             pairs = []
             for seg in seg_list:
-                start, end, seg_actions = seg.get("start"), seg.get("end"), seg.get("actions")
+                start, end = seg.get("start"), seg.get("end")
+                seg_actions = seg.get("actions") or []
+                seg_aspect = seg.get("aspect_ratio")
+                seg_pos = seg.get("aspect_position", 0.5)
+
                 if not is_valid_time(start or "") or not is_valid_time(end or ""):
                     raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
-                if not isinstance(seg_actions, list) or not seg_actions:
-                    raise HTTPException(400, "Chaque segment doit avoir au moins une action.")
+                if not isinstance(seg_actions, list):
+                    raise HTTPException(400, "Les actions d'un segment doivent être une liste.")
                 for a in seg_actions:
                     if a not in ORIENTATION_ACTIONS:
                         raise HTTPException(400, f"Action non supportée dans un segment : {a}")
-                pairs.append({"start": start, "end": end, "actions": seg_actions})
+                if seg_aspect and seg_aspect not in ASPECT_RATIOS:
+                    raise HTTPException(400, f"Format non supporté dans un segment : {seg_aspect}")
+                if not seg_actions and not seg_aspect:
+                    raise HTTPException(400, "Chaque segment doit avoir au moins une action ou un format.")
 
-            orient_segments(video_path, pairs, target)
+                pairs.append({
+                    "start": start, "end": end, "actions": seg_actions,
+                    "aspect_ratio": seg_aspect, "aspect_position": seg_pos,
+                })
 
-        if aspect_ratio:
-            apply_aspect_ratio(target, output_path, aspect_ratio, aspect_position)
-            intermediate_path.unlink(missing_ok=True)
+            orient_segments(video_path, pairs, output_path)
     except RuntimeError as e:
         raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
 

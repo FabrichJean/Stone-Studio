@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Modifie l'orientation d'une vidéo (rotation, miroir) via ffmpeg — globalement ou par morceaux.
+"""Modifie l'orientation d'une vidéo (rotation, miroir, format d'affichage) via ffmpeg —
+globalement ou par morceaux.
 
 Les actions peuvent être combinées (ex: rotation 90° + miroir horizontal) en les
-enchaînant dans le graphe de filtres, dans l'ordre fourni.
+enchaînant dans le graphe de filtres, dans l'ordre fourni. Le format d'affichage
+(recadrage) peut être réglé indépendamment, y compris par morceau.
 """
 
 import argparse
@@ -56,20 +58,37 @@ def probe_dimensions(path: Path) -> tuple[int, int]:
     return stream["width"], stream["height"]
 
 
+def _crop_filter(ratio_key: str, pos: float) -> str:
+    """`pos` (0..1) place le recadrage le long de l'axe rogné : 0 = gauche/haut,
+    0.5 = centré, 1 = droite/bas."""
+    if ratio_key not in ASPECT_RATIOS:
+        raise ValueError(f"Format inconnu : {ratio_key}. Choix possibles : {', '.join(ASPECT_RATIOS)}")
+
+    pos = max(0.0, min(1.0, pos))
+    rw, rh = ASPECT_RATIOS[ratio_key]
+    r = rw / rh
+    return (
+        f"crop=w='if(gt(iw/ih,{r}),ih*{r},iw)':h='if(gt(iw/ih,{r}),ih,iw/{r})':"
+        f"x='(iw-out_w)*{pos}':y='(ih-out_h)*{pos}'"
+    )
+
+
 def change_orientation(
     input_path: Path,
     output_path: Path,
     actions: list[str],
     start: str | None = None,
     end: str | None = None,
+    aspect_ratio: str | None = None,
+    aspect_position: float = 0.5,
 ) -> None:
-    if not actions:
-        raise ValueError("Au moins une action est requise.")
     for action in actions:
         if action not in ACTIONS:
             raise ValueError(f"Action inconnue : {action}. Choix possibles : {', '.join(ACTIONS)}")
+    if not actions and not aspect_ratio:
+        raise ValueError("Au moins une action ou un format d'affichage est requis.")
 
-    video_filter = ",".join(ACTIONS[a] for a in actions)
+    filter_parts = []
     audio_filter = None
 
     # Le trim est fait dans le graphe de filtres plutôt que via -ss/-to : combiner -ss/-to
@@ -82,10 +101,15 @@ def change_orientation(
         if end:
             bounds.append(f"end={time_to_seconds(end)}")
         trim_expr = ":".join(bounds)
-        video_filter = f"trim={trim_expr},setpts=PTS-STARTPTS,{video_filter}"
+        filter_parts += [f"trim={trim_expr}", "setpts=PTS-STARTPTS"]
         audio_filter = f"atrim={trim_expr},asetpts=PTS-STARTPTS"
 
-    cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vf", video_filter]
+    filter_parts += [ACTIONS[a] for a in actions]
+
+    if aspect_ratio:
+        filter_parts.append(_crop_filter(aspect_ratio, aspect_position))
+
+    cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vf", ",".join(filter_parts)]
 
     if audio_filter:
         cmd += ["-filter:a", audio_filter, "-c:a", "aac"]
@@ -100,25 +124,10 @@ def change_orientation(
 
 
 def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str, pos: float = 0.5) -> None:
-    """Recadre (crop, sans déformation) au format d'affichage choisi.
-
-    `pos` (0..1) place le recadrage le long de l'axe rogné : 0 = gauche/haut,
-    0.5 = centré (défaut), 1 = droite/bas.
-    """
-    if ratio_key not in ASPECT_RATIOS:
-        raise ValueError(f"Format inconnu : {ratio_key}. Choix possibles : {', '.join(ASPECT_RATIOS)}")
-
-    pos = max(0.0, min(1.0, pos))
-    rw, rh = ASPECT_RATIOS[ratio_key]
-    r = rw / rh
-    crop_filter = (
-        f"crop=w='if(gt(iw/ih,{r}),ih*{r},iw)':h='if(gt(iw/ih,{r}),ih,iw/{r})':"
-        f"x='(iw-out_w)*{pos}':y='(ih-out_h)*{pos}'"
-    )
-
+    """Recadre (crop, sans déformation) au format d'affichage choisi, sans autre transformation."""
     cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
-        "-vf", crop_filter,
+        "-vf", _crop_filter(ratio_key, pos),
         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-c:a", "copy",
         str(output_path),
@@ -129,12 +138,13 @@ def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str, pos:
 
 
 def orient_segments(input_path: Path, segments: list[dict], output_path: Path) -> None:
-    """segments: [{"start": str, "end": str, "actions": list[str]}, ...] — orientation(s)
-    propre(s) à chaque morceau (une ou plusieurs actions combinées).
+    """segments: [{"start", "end", "actions": list[str], "aspect_ratio": str|None,
+    "aspect_position": float}, ...] — orientation ET format d'affichage propres à
+    chaque morceau.
 
-    Des morceaux avec des rotations différentes (90° vs 180°/miroir) produisent des
-    dimensions différentes : on harmonise sur la plus grande taille (scale + pad) avant
-    de concaténer via un filtre plutôt qu'un simple stream copy.
+    Des morceaux avec des rotations ou formats différents produisent des dimensions
+    différentes : on harmonise sur la plus grande taille (scale + pad) avant de
+    concaténer via un filtre plutôt qu'un simple stream copy.
     """
     if not segments:
         raise ValueError("Aucun segment fourni.")
@@ -145,7 +155,12 @@ def orient_segments(input_path: Path, segments: list[dict], output_path: Path) -
 
         for i, seg in enumerate(segments):
             part_path = tmp_dir / f"part_{i}{input_path.suffix}"
-            change_orientation(input_path, part_path, seg["actions"], seg.get("start"), seg.get("end"))
+            change_orientation(
+                input_path, part_path,
+                seg.get("actions") or [],
+                seg.get("start"), seg.get("end"),
+                seg.get("aspect_ratio"), seg.get("aspect_position", 0.5),
+            )
             part_paths.append(part_path)
 
         dims = [probe_dimensions(p) for p in part_paths]
@@ -185,6 +200,8 @@ def main() -> None:
         "-a", "--action", choices=ACTIONS, action="append", default=None,
         help="Action d'orientation globale (répétable pour combiner, ex: -a rotate_90_cw -a flip_horizontal)",
     )
+    parser.add_argument("--aspect", choices=ASPECT_RATIOS, default=None, help="Format d'affichage global")
+    parser.add_argument("--aspect-pos", type=float, default=0.5, help="Position du recadrage (0..1, défaut 0.5)")
     parser.add_argument(
         "--segment", nargs=3, metavar=("START", "END", "ACTIONS"), action="append", default=None,
         help="Segment avec ses propres actions (répétable) : START END ACTIONS "
@@ -217,17 +234,17 @@ def main() -> None:
         print(f"Orientation appliquée par morceaux : {output_path}")
         return
 
-    if not args.action:
-        sys.exit("Erreur : préciser au moins un --action ou un --segment.")
+    if not args.action and not args.aspect:
+        sys.exit("Erreur : préciser au moins un --action, un --aspect ou un --segment.")
 
     output_path = args.output or args.video.with_stem(args.video.stem + "_orientation")
 
     try:
-        change_orientation(args.video, output_path, args.action)
+        change_orientation(args.video, output_path, args.action or [], aspect_ratio=args.aspect, aspect_position=args.aspect_pos)
     except RuntimeError as e:
         sys.exit(f"Erreur ffmpeg : {e}")
 
-    print(f"Orientation modifiée ({'+'.join(args.action)}) : {output_path}")
+    print(f"Orientation modifiée : {output_path}")
 
 
 if __name__ == "__main__":
