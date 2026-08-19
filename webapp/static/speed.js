@@ -273,9 +273,18 @@ previewBtn.addEventListener("click", () => {
 });
 
 addSegmentBtn.addEventListener("click", () => {
+  const addedEnd = endTime;
   segments.push({ start: startTime, end: endTime, factor: parseFloat(segmentSpeed.value) });
   segments.sort((a, b) => a.start - b.start);
   renderSegments();
+
+  // Prépare la sélection du prochain morceau juste après celui qui vient d'être ajouté.
+  if (addedEnd < mediaDuration - MIN_GAP) {
+    startTime = addedEnd;
+    endTime = mediaDuration;
+    preview.currentTime = startTime;
+    updateTimeline();
+  }
 });
 
 /* ---------- Application ---------- */
