@@ -31,7 +31,12 @@
       </div>
 
       <div id="videoStage" class="video-stage" hidden>
-        <video id="preview" controls></video>
+        <div id="cropWrap" class="crop-wrap">
+          <video id="preview" controls></video>
+          <div id="cropOverlay" class="crop-overlay" hidden>
+            <div id="cropBox" class="crop-box"></div>
+          </div>
+        </div>
       </div>
 
       <div id="aspectSection" class="params" hidden>
@@ -58,6 +63,7 @@
             <span>Portrait 4:5</span>
           </button>
         </div>
+        <p id="aspectHint" class="trim-duration" hidden>Glissez le cadre sur l'aperçu pour choisir la zone conservée.</p>
       </div>
 
       <div id="modeSection" class="params" hidden>
