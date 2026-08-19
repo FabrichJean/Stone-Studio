@@ -8,6 +8,9 @@ const pickProjectLink = document.getElementById("pickProjectLink");
 
 const aspectSection = document.getElementById("aspectSection");
 const aspectGrid = document.getElementById("aspectGrid");
+const aspectHint = document.getElementById("aspectHint");
+const cropOverlay = document.getElementById("cropOverlay");
+const cropBox = document.getElementById("cropBox");
 const modeSection = document.getElementById("modeSection");
 const modeToggle = document.getElementById("modeToggle");
 const globalPanel = document.getElementById("globalPanel");
@@ -47,30 +50,86 @@ const ACTION_LABELS = {
 
 const ROTATE_90_ACTIONS = new Set(["rotate_90_cw", "rotate_90_ccw"]);
 
-const ASPECT_CSS_RATIOS = {
-  landscape_16_9: "16 / 9",
-  portrait_9_16: "9 / 16",
-  square_1_1: "1 / 1",
-  portrait_4_5: "4 / 5",
+const ASPECT_NUMERIC = {
+  landscape_16_9: 16 / 9,
+  portrait_9_16: 9 / 16,
+  square_1_1: 1,
+  portrait_4_5: 4 / 5,
 };
 
 let selectedAspect = "";
+let aspectPos = 0.5;
+let cropAxis = null; // "x" | "y" | null (null = pas de recadrage nécessaire)
+let draggingCrop = false;
 
-function applyAspectPreview(value) {
-  if (!value) {
-    preview.style.aspectRatio = "";
-    preview.style.objectFit = "";
-  } else {
-    preview.style.aspectRatio = ASPECT_CSS_RATIOS[value];
-    preview.style.objectFit = "cover";
+function updateCropBox() {
+  if (!selectedAspect) {
+    cropOverlay.hidden = true;
+    aspectHint.hidden = true;
+    return;
   }
+
+  const w = preview.clientWidth;
+  const h = preview.clientHeight;
+  if (!w || !h) return;
+
+  const r = ASPECT_NUMERIC[selectedAspect];
+  const videoAR = w / h;
+  const widthCrop = videoAR > r;
+
+  const boxW = widthCrop ? h * r : w;
+  const boxH = widthCrop ? h : w / r;
+
+  cropAxis = widthCrop ? "x" : "y";
+  const maxOffset = widthCrop ? w - boxW : h - boxH;
+  const offset = maxOffset * aspectPos;
+
+  cropBox.style.width = `${boxW}px`;
+  cropBox.style.height = `${boxH}px`;
+  cropBox.style.left = `${widthCrop ? offset : 0}px`;
+  cropBox.style.top = `${widthCrop ? 0 : offset}px`;
+
+  cropOverlay.hidden = false;
+  aspectHint.hidden = maxOffset < 1; // rien à déplacer si le ratio correspond déjà
 }
+
+cropBox.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  draggingCrop = true;
+});
+
+window.addEventListener("pointermove", (e) => {
+  if (!draggingCrop || !cropAxis) return;
+  const rect = preview.getBoundingClientRect();
+  const boxW = cropBox.offsetWidth;
+  const boxH = cropBox.offsetHeight;
+
+  if (cropAxis === "x") {
+    const maxOffset = rect.width - boxW;
+    const x = Math.max(0, Math.min(maxOffset, e.clientX - rect.left - boxW / 2));
+    aspectPos = maxOffset > 0 ? x / maxOffset : 0.5;
+  } else {
+    const maxOffset = rect.height - boxH;
+    const y = Math.max(0, Math.min(maxOffset, e.clientY - rect.top - boxH / 2));
+    aspectPos = maxOffset > 0 ? y / maxOffset : 0.5;
+  }
+  updateCropBox();
+});
+
+window.addEventListener("pointerup", () => {
+  draggingCrop = false;
+});
+
+window.addEventListener("resize", () => {
+  if (selectedAspect) updateCropBox();
+});
 
 aspectGrid.querySelectorAll(".orientation-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     selectedAspect = btn.dataset.aspect;
     aspectGrid.querySelectorAll(".orientation-btn").forEach((b) => b.classList.toggle("active", b === btn));
-    applyAspectPreview(selectedAspect);
+    aspectPos = 0.5;
+    updateCropBox();
     updateApplyState();
   });
 });
@@ -148,9 +207,10 @@ function handleFile(file) {
   currentSegmentActions = [];
   segments = [];
   preview.style.transform = "";
-  preview.style.aspectRatio = "";
-  preview.style.objectFit = "";
   selectedAspect = "";
+  aspectPos = 0.5;
+  cropOverlay.hidden = true;
+  aspectHint.hidden = true;
   document.querySelectorAll(".orientation-btn").forEach((b) => b.classList.remove("active"));
   aspectGrid.querySelector('.orientation-btn[data-aspect=""]').classList.add("active");
   renderSegments();
@@ -403,7 +463,10 @@ applyBtn.addEventListener("click", async () => {
   const formData = new FormData();
   formData.append("video", selectedFile);
   formData.append("mode", mode);
-  if (selectedAspect) formData.append("aspect_ratio", selectedAspect);
+  if (selectedAspect) {
+    formData.append("aspect_ratio", selectedAspect);
+    formData.append("aspect_position", aspectPos);
+  }
 
   if (mode === "global") {
     formData.append("actions", JSON.stringify(globalActions));
