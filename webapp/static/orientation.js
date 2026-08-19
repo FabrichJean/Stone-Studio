@@ -57,6 +57,13 @@ const ASPECT_NUMERIC = {
   portrait_4_5: 4 / 5,
 };
 
+const ASPECT_LABELS = {
+  landscape_16_9: "16:9",
+  portrait_9_16: "9:16",
+  square_1_1: "1:1",
+  portrait_4_5: "4:5",
+};
+
 let selectedAspect = "";
 let aspectPos = 0.5;
 let cropAxis = null; // "x" | "y" | null (null = pas de recadrage nécessaire)
@@ -259,6 +266,8 @@ modeToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
     globalPanel.hidden = mode !== "global";
     segmentsPanel.hidden = mode !== "segments";
     preview.style.transform = "";
+    document.getElementById("aspectSectionTitle").textContent =
+      mode === "global" ? "Format d'affichage (appliqué au résultat final)" : "Format d'affichage de ce morceau";
     updateApplyState();
   });
 });
@@ -318,18 +327,20 @@ function renderSegments() {
   }
 
   segmentsList.innerHTML = segments
-    .map(
-      (seg, i) => `
+    .map((seg, i) => {
+      const tags = [...seg.actions.map((a) => ACTION_LABELS[a])];
+      if (seg.aspectRatio) tags.push(ASPECT_LABELS[seg.aspectRatio]);
+      return `
       <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
         <span>
           <span class="segment-label">${i + 1}. ${secondsToTimestamp(seg.start)} → ${secondsToTimestamp(seg.end)}</span>
-          <span class="segment-speed-tag">${seg.actions.map((a) => ACTION_LABELS[a]).join(" + ")}</span>
+          <span class="segment-speed-tag">${tags.join(" + ")}</span>
         </span>
         <button class="segment-remove" data-index="${i}" title="Retirer">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
         </button>
-      </div>`
-    )
+      </div>`;
+    })
     .join("");
 
   segmentsList.querySelectorAll(".segment-item").forEach((el) => {
@@ -441,12 +452,18 @@ previewBtn.addEventListener("click", () => {
 });
 
 addSegmentBtn.addEventListener("click", () => {
-  if (currentSegmentActions.length === 0) {
-    status.textContent = "Choisissez au moins une orientation pour ce morceau.";
+  if (currentSegmentActions.length === 0 && !selectedAspect) {
+    status.textContent = "Choisissez au moins une orientation ou un format pour ce morceau.";
     status.className = "status error";
     return;
   }
-  segments.push({ start: startTime, end: endTime, actions: [...currentSegmentActions] });
+  segments.push({
+    start: startTime,
+    end: endTime,
+    actions: [...currentSegmentActions],
+    aspectRatio: selectedAspect || null,
+    aspectPos: aspectPos,
+  });
   segments.sort((a, b) => a.start - b.start);
   renderSegments();
 });
@@ -463,18 +480,24 @@ applyBtn.addEventListener("click", async () => {
   const formData = new FormData();
   formData.append("video", selectedFile);
   formData.append("mode", mode);
-  if (selectedAspect) {
-    formData.append("aspect_ratio", selectedAspect);
-    formData.append("aspect_position", aspectPos);
-  }
 
   if (mode === "global") {
     formData.append("actions", JSON.stringify(globalActions));
+    if (selectedAspect) {
+      formData.append("aspect_ratio", selectedAspect);
+      formData.append("aspect_position", aspectPos);
+    }
   } else {
     formData.append(
       "segments",
       JSON.stringify(
-        segments.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end), actions: s.actions }))
+        segments.map((s) => ({
+          start: secondsToTimestamp(s.start),
+          end: secondsToTimestamp(s.end),
+          actions: s.actions,
+          aspect_ratio: s.aspectRatio,
+          aspect_position: s.aspectPos,
+        }))
       )
     );
   }
