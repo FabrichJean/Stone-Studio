@@ -284,6 +284,11 @@ h1, h2, h3, .serif {
   font-family: inherit;
 }
 
+.speed-label input[type="range"] {
+  accent-color: var(--accent);
+  width: 100%;
+}
+
 .segment-speed-tag {
   display: inline-block;
   background: #f0ede5;
@@ -316,6 +321,55 @@ h1, h2, h3, .serif {
   background: #000;
   margin-bottom: 0;
   transition: transform 0.2s ease;
+  display: block;
+}
+
+.crop-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), inset 0 0 0 9999px rgba(255, 255, 255, 0.03);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.crop-box:active { cursor: grabbing; }
+
+.crop-box::before,
+.crop-box::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.crop-box::before {
+  top: 50%;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.crop-box::after {
+  left: 50%;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  transform: translateX(-50%);
 }
 
 .dropzone {
