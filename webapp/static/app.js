@@ -50,6 +50,7 @@ function handleFile(file) {
   status.className = "status";
   progressWrap.hidden = true;
   downloadBtn.hidden = true;
+  document.getElementById("sendToWrap").hidden = true;
   pendingDownload = null;
 
   const url = URL.createObjectURL(file);
@@ -133,6 +134,7 @@ extractBtn.addEventListener("click", async () => {
 
     pendingDownload = { projectId: job.project_id, name: job.output_name };
     downloadBtn.hidden = false;
+    renderSendTo("sendToWrap", job.project_id, "extract_audio");
 
     status.textContent = `Audio extrait avec succès (${formatBytes(job.output_size)}).`;
     status.className = "status success";
@@ -152,3 +154,5 @@ downloadBtn.addEventListener("click", () => {
   a.download = pendingDownload.name;
   a.click();
 });
+
+autoLoadFromUrl(handleFile);
