@@ -190,8 +190,23 @@
   var openBtn = document.getElementById("moreToolsBtn");
   var closeBtn = document.getElementById("closeToolsModal");
 
-  function open() { modal.hidden = false; }
-  function close() { modal.hidden = true; }
+  function open() {
+    modal.hidden = false;
+    // Force le navigateur à appliquer l'état initial avant de déclencher la transition,
+    // sinon l'apparition se fait sans animation (les deux changements sont fusionnés).
+    void modal.offsetWidth;
+    modal.classList.add("open");
+  }
+
+  function close() {
+    if (modal.hidden) return;
+    modal.classList.remove("open");
+    modal.addEventListener("transitionend", function onEnd(e) {
+      if (e.target !== modal) return;
+      modal.removeEventListener("transitionend", onEnd);
+      modal.hidden = true;
+    });
+  }
 
   openBtn.addEventListener("click", open);
   closeBtn.addEventListener("click", close);

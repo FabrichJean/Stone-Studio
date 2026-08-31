@@ -138,16 +138,22 @@ h1, h2, h3, .serif {
   justify-content: center;
   z-index: 100;
   padding: 24px;
+  opacity: 0;
+  transition: opacity 0.22s ease;
 }
 
 .modal-overlay[hidden] {
   display: none;
 }
 
+.modal-overlay.open {
+  opacity: 1;
+}
+
 .launcher {
   width: 100%;
   max-width: 620px;
-  max-height: min(640px, 85vh);
+  height: min(640px, 85vh);
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -155,6 +161,12 @@ h1, h2, h3, .serif {
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(38, 36, 33, 0.22);
   padding: 20px;
+  transform: scale(0.92) translateY(6px);
+  transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+
+.modal-overlay.open .launcher {
+  transform: scale(1) translateY(0);
 }
 
 .launcher-header {
