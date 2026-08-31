@@ -73,6 +73,16 @@ def _crop_filter(ratio_key: str, pos: float) -> str:
     )
 
 
+def _custom_crop_filter(rect: dict) -> str:
+    """`rect` donne x, y, w, h en fractions (0..1) de la frame source — un cadre
+    dessiné librement par l'utilisateur plutôt qu'un format d'affichage prédéfini."""
+    x, y, w, h = rect["x"], rect["y"], rect["w"], rect["h"]
+    return (
+        f"crop=w='trunc(iw*{w}/2)*2':h='trunc(ih*{h}/2)*2':"
+        f"x='trunc(iw*{x})':y='trunc(ih*{y})'"
+    )
+
+
 def change_orientation(
     input_path: Path,
     output_path: Path,
@@ -81,11 +91,12 @@ def change_orientation(
     end: str | None = None,
     aspect_ratio: str | None = None,
     aspect_position: float = 0.5,
+    crop_rect: dict | None = None,
 ) -> None:
     for action in actions:
         if action not in ACTIONS:
             raise ValueError(f"Action inconnue : {action}. Choix possibles : {', '.join(ACTIONS)}")
-    if not actions and not aspect_ratio:
+    if not actions and not aspect_ratio and not crop_rect:
         raise ValueError("Au moins une action ou un format d'affichage est requis.")
 
     filter_parts = []
@@ -106,7 +117,9 @@ def change_orientation(
 
     filter_parts += [ACTIONS[a] for a in actions]
 
-    if aspect_ratio:
+    if crop_rect:
+        filter_parts.append(_custom_crop_filter(crop_rect))
+    elif aspect_ratio:
         filter_parts.append(_crop_filter(aspect_ratio, aspect_position))
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vf", ",".join(filter_parts)]
@@ -139,8 +152,8 @@ def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str, pos:
 
 def orient_segments(input_path: Path, segments: list[dict], output_path: Path) -> None:
     """segments: [{"start", "end", "actions": list[str], "aspect_ratio": str|None,
-    "aspect_position": float}, ...] — orientation ET format d'affichage propres à
-    chaque morceau.
+    "aspect_position": float, "crop_rect": dict|None}, ...] — orientation ET format
+    d'affichage propres à chaque morceau.
 
     Des morceaux avec des rotations ou formats différents produisent des dimensions
     différentes : on harmonise sur la plus grande taille (scale + pad) avant de
@@ -160,6 +173,7 @@ def orient_segments(input_path: Path, segments: list[dict], output_path: Path) -
                 seg.get("actions") or [],
                 seg.get("start"), seg.get("end"),
                 seg.get("aspect_ratio"), seg.get("aspect_position", 0.5),
+                seg.get("crop_rect"),
             )
             part_paths.append(part_path)
 
