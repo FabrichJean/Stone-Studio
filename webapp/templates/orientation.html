@@ -34,7 +34,12 @@
         <div id="cropWrap" class="crop-wrap">
           <video id="preview" controls></video>
           <div id="cropOverlay" class="crop-overlay" hidden>
-            <div id="cropBox" class="crop-box"></div>
+            <div id="cropBox" class="crop-box">
+              <div class="crop-handle" data-handle="nw"></div>
+              <div class="crop-handle" data-handle="ne"></div>
+              <div class="crop-handle" data-handle="sw"></div>
+              <div class="crop-handle" data-handle="se"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -62,8 +67,13 @@
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="5" y="2" width="12" height="18" rx="1.5"/></svg>
             <span>Portrait 4:5</span>
           </button>
+          <button type="button" class="orientation-btn" data-aspect="custom">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="16" height="16" rx="1.5" stroke-dasharray="2.5 2"/><path d="M13.5 8.5l-5 5m0-4v4h4" stroke-dasharray="none"/></svg>
+            <span>Personnalisé</span>
+          </button>
         </div>
         <p id="aspectHint" class="trim-duration" hidden>Glissez le cadre sur l'aperçu pour choisir la zone conservée.</p>
+        <p id="customHint" class="trim-duration" hidden>Dessinez un cadre sur l'aperçu, puis ajustez-le par les coins ou en le déplaçant.</p>
       </div>
 
       <div id="modeSection" class="params" hidden>
@@ -155,7 +165,7 @@
     </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/icons.js"></script>
-<script src="/static/common.js"></script>
-<script src="/static/orientation.js"></script>
+<script src="{{ static_url('icons.js') }}"></script>
+<script src="{{ static_url('common.js') }}"></script>
+<script src="{{ static_url('orientation.js') }}"></script>
 {% endblock %}
