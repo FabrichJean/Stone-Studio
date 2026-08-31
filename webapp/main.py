@@ -56,6 +56,7 @@ COMPRESS_JOBS: dict[str, dict] = {}
 EXTRACT_JOBS: dict[str, dict] = {}
 TRIM_JOBS: dict[str, dict] = {}
 RECORD_JOBS: dict[str, dict] = {}
+ORIENTATION_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -423,6 +424,38 @@ def _validate_crop_rect(rect) -> None:
         raise HTTPException(400, "Le cadre personnalisé dépasse les limites de l'image.")
 
 
+def _run_orientation_job(
+    job_id: str, video_path: Path, output_path: Path, filename: str, mode: str,
+    action_list: list[str] | None, aspect_ratio: str | None, aspect_position: float,
+    parsed_crop_rect: dict | None, pairs: list[dict] | None,
+) -> None:
+    def on_progress(frac: float) -> None:
+        ORIENTATION_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    try:
+        if mode == "global":
+            change_orientation(
+                video_path, output_path, action_list or [],
+                aspect_ratio=aspect_ratio, aspect_position=aspect_position, crop_rect=parsed_crop_rect,
+                on_progress=on_progress,
+            )
+        else:
+            orient_segments(video_path, pairs, output_path, on_progress)
+    except RuntimeError as e:
+        ORIENTATION_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    stem = Path(filename).stem
+    output_name = f"{stem}_orientation{output_path.suffix}"
+    save_project("orientation", filename, "output", output_path.name, output_name)
+    ORIENTATION_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": Path(output_path.name).stem,
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+    }
+
+
 @app.post("/api/orientation")
 async def api_orientation(
     video: UploadFile = File(...),
@@ -446,6 +479,59 @@ async def api_orientation(
             raise HTTPException(400, "Le champ 'crop_rect' doit être un JSON valide.") from e
         _validate_crop_rect(parsed_crop_rect)
 
+    action_list = None
+    pairs = None
+
+    if mode == "global":
+        try:
+            action_list = json.loads(actions or "[]")
+        except json.JSONDecodeError as e:
+            raise HTTPException(400, "Le champ 'actions' doit être un JSON valide.") from e
+
+        if not isinstance(action_list, list):
+            raise HTTPException(400, "Le champ 'actions' doit être une liste JSON.")
+        for a in action_list:
+            if a not in ORIENTATION_ACTIONS:
+                raise HTTPException(400, f"Action non supportée : {a}")
+        if not action_list and not aspect_ratio and not parsed_crop_rect:
+            raise HTTPException(400, "Choisissez au moins une action ou un format d'affichage.")
+    else:
+        try:
+            seg_list = json.loads(segments or "[]")
+        except json.JSONDecodeError as e:
+            raise HTTPException(400, "Le champ 'segments' doit être un JSON valide.") from e
+
+        if not isinstance(seg_list, list) or not seg_list:
+            raise HTTPException(400, "Au moins un segment est requis.")
+
+        pairs = []
+        for seg in seg_list:
+            start, end = seg.get("start"), seg.get("end")
+            seg_actions = seg.get("actions") or []
+            seg_aspect = seg.get("aspect_ratio")
+            seg_pos = seg.get("aspect_position", 0.5)
+            seg_crop_rect = seg.get("crop_rect")
+
+            if not is_valid_time(start or "") or not is_valid_time(end or ""):
+                raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
+            if not isinstance(seg_actions, list):
+                raise HTTPException(400, "Les actions d'un segment doivent être une liste.")
+            for a in seg_actions:
+                if a not in ORIENTATION_ACTIONS:
+                    raise HTTPException(400, f"Action non supportée dans un segment : {a}")
+            if seg_aspect and seg_aspect not in ASPECT_RATIOS:
+                raise HTTPException(400, f"Format non supporté dans un segment : {seg_aspect}")
+            if seg_crop_rect:
+                _validate_crop_rect(seg_crop_rect)
+            if not seg_actions and not seg_aspect and not seg_crop_rect:
+                raise HTTPException(400, "Chaque segment doit avoir au moins une action ou un format.")
+
+            pairs.append({
+                "start": start, "end": end, "actions": seg_actions,
+                "aspect_ratio": seg_aspect, "aspect_position": seg_pos,
+                "crop_rect": seg_crop_rect,
+            })
+
     job_id = uuid.uuid4().hex
     suffix = Path(video.filename).suffix
     video_file = f"{job_id}_{video.filename}"
@@ -457,74 +543,26 @@ async def api_orientation(
         shutil.copyfileobj(video.file, f)
     save_project("upload", None, "uploads", video_file, video.filename)
 
-    try:
-        if mode == "global":
-            try:
-                action_list = json.loads(actions or "[]")
-            except json.JSONDecodeError as e:
-                raise HTTPException(400, "Le champ 'actions' doit être un JSON valide.") from e
-
-            if not isinstance(action_list, list):
-                raise HTTPException(400, "Le champ 'actions' doit être une liste JSON.")
-            for a in action_list:
-                if a not in ORIENTATION_ACTIONS:
-                    raise HTTPException(400, f"Action non supportée : {a}")
-            if not action_list and not aspect_ratio and not parsed_crop_rect:
-                raise HTTPException(400, "Choisissez au moins une action ou un format d'affichage.")
-
-            change_orientation(
-                video_path, output_path, action_list,
-                aspect_ratio=aspect_ratio, aspect_position=aspect_position, crop_rect=parsed_crop_rect,
-            )
-        else:
-            try:
-                seg_list = json.loads(segments or "[]")
-            except json.JSONDecodeError as e:
-                raise HTTPException(400, "Le champ 'segments' doit être un JSON valide.") from e
-
-            if not isinstance(seg_list, list) or not seg_list:
-                raise HTTPException(400, "Au moins un segment est requis.")
-
-            pairs = []
-            for seg in seg_list:
-                start, end = seg.get("start"), seg.get("end")
-                seg_actions = seg.get("actions") or []
-                seg_aspect = seg.get("aspect_ratio")
-                seg_pos = seg.get("aspect_position", 0.5)
-                seg_crop_rect = seg.get("crop_rect")
-
-                if not is_valid_time(start or "") or not is_valid_time(end or ""):
-                    raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
-                if not isinstance(seg_actions, list):
-                    raise HTTPException(400, "Les actions d'un segment doivent être une liste.")
-                for a in seg_actions:
-                    if a not in ORIENTATION_ACTIONS:
-                        raise HTTPException(400, f"Action non supportée dans un segment : {a}")
-                if seg_aspect and seg_aspect not in ASPECT_RATIOS:
-                    raise HTTPException(400, f"Format non supporté dans un segment : {seg_aspect}")
-                if seg_crop_rect:
-                    _validate_crop_rect(seg_crop_rect)
-                if not seg_actions and not seg_aspect and not seg_crop_rect:
-                    raise HTTPException(400, "Chaque segment doit avoir au moins une action ou un format.")
-
-                pairs.append({
-                    "start": start, "end": end, "actions": seg_actions,
-                    "aspect_ratio": seg_aspect, "aspect_position": seg_pos,
-                    "crop_rect": seg_crop_rect,
-                })
-
-            orient_segments(video_path, pairs, output_path)
-    except RuntimeError as e:
-        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
-
-    stem = Path(video.filename).stem
-    output_name = f"{stem}_orientation{suffix}"
-    save_project("orientation", video.filename, "output", output_file, output_name)
-
-    return FileResponse(
-        output_path, filename=output_name, media_type="application/octet-stream",
-        headers={"X-Project-Id": Path(output_file).stem},
+    ORIENTATION_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_orientation_job,
+        args=(
+            job_id, video_path, output_path, video.filename, mode,
+            action_list, aspect_ratio, aspect_position, parsed_crop_rect, pairs,
+        ),
+        daemon=True,
     )
+    thread.start()
+
+    return {"job_id": job_id}
+
+
+@app.get("/api/orientation/{job_id}/progress")
+def orientation_progress(job_id: str):
+    job = ORIENTATION_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
 
 
 def _run_record_job(

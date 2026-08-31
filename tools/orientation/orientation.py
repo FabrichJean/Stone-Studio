@@ -15,8 +15,12 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 TIME_RE = re.compile(r"^(\d{1,2}:)?(\d{1,2}:)?\d{1,2}(\.\d+)?$")
+OUT_TIME_RE = re.compile(r"^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$")
+
+ProgressCallback = Callable[[float], None]
 
 ACTIONS = {
     "rotate_90_cw": "transpose=1",
@@ -44,6 +48,53 @@ def time_to_seconds(value: str) -> float:
         parts.insert(0, 0.0)
     h, m, s = parts
     return h * 3600 + m * 60 + s
+
+
+def probe_duration(path: Path) -> float | None:
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return float(result.stdout.strip())
+    except ValueError:
+        return None
+
+
+def _parse_out_time(value: str) -> float | None:
+    match = OUT_TIME_RE.match(value)
+    if not match:
+        return None
+    h, m, s = match.groups()
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def _run_ffmpeg_progress(
+    cmd: list[str], seg_duration: float | None, on_progress: ProgressCallback | None, start: float, end: float
+) -> None:
+    """Exécute ffmpeg en suivant sa progression via -progress pipe:1, et rapporte une
+    fraction globale [start, end] (permet de composer plusieurs segments en un seul suivi)."""
+    full_cmd = cmd + ["-progress", "pipe:1", "-nostats"]
+    proc = subprocess.Popen(full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line.startswith("out_time="):
+            continue
+        elapsed = _parse_out_time(line.split("=", 1)[1])
+        if elapsed is not None and seg_duration and on_progress:
+            frac = max(0.0, min(elapsed / seg_duration, 1.0))
+            on_progress(start + frac * (end - start))
+
+    stderr = proc.stderr.read() if proc.stderr else ""
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(stderr.strip())
+
+    if on_progress:
+        on_progress(end)
 
 
 def probe_dimensions(path: Path) -> tuple[int, int]:
@@ -92,6 +143,8 @@ def change_orientation(
     aspect_ratio: str | None = None,
     aspect_position: float = 0.5,
     crop_rect: dict | None = None,
+    on_progress: ProgressCallback | None = None,
+    progress_range: tuple[float, float] = (0.0, 1.0),
 ) -> None:
     for action in actions:
         if action not in ACTIONS:
@@ -131,9 +184,14 @@ def change_orientation(
 
     cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18", str(output_path)]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip())
+    if start and end:
+        seg_duration = time_to_seconds(end) - time_to_seconds(start)
+    elif start or end:
+        seg_duration = None
+    else:
+        seg_duration = probe_duration(input_path) if on_progress else None
+
+    _run_ffmpeg_progress(cmd, seg_duration, on_progress, *progress_range)
 
 
 def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str, pos: float = 0.5) -> None:
@@ -150,7 +208,9 @@ def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str, pos:
         raise RuntimeError(result.stderr.strip())
 
 
-def orient_segments(input_path: Path, segments: list[dict], output_path: Path) -> None:
+def orient_segments(
+    input_path: Path, segments: list[dict], output_path: Path, on_progress: ProgressCallback | None = None
+) -> None:
     """segments: [{"start", "end", "actions": list[str], "aspect_ratio": str|None,
     "aspect_position": float, "crop_rect": dict|None}, ...] — orientation ET format
     d'affichage propres à chaque morceau.
@@ -162,19 +222,29 @@ def orient_segments(input_path: Path, segments: list[dict], output_path: Path) -
     if not segments:
         raise ValueError("Aucun segment fourni.")
 
+    durations = [max(time_to_seconds(s["end"]) - time_to_seconds(s["start"]), 0.01) for s in segments]
+    total = sum(durations)
+    # La passe finale d'harmonisation + concaténation prend un temps non négligeable
+    # (contrairement au simple stream copy de trim_media) : on lui réserve une vraie part.
+    trim_budget = 0.85 if on_progress else 1.0
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         part_paths = []
+        cursor = 0.0
 
-        for i, seg in enumerate(segments):
+        for i, (seg, dur) in enumerate(zip(segments, durations)):
             part_path = tmp_dir / f"part_{i}{input_path.suffix}"
+            span = (dur / total) * trim_budget
             change_orientation(
                 input_path, part_path,
                 seg.get("actions") or [],
                 seg.get("start"), seg.get("end"),
                 seg.get("aspect_ratio"), seg.get("aspect_position", 0.5),
                 seg.get("crop_rect"),
+                on_progress=on_progress, progress_range=(cursor, cursor + span),
             )
+            cursor += span
             part_paths.append(part_path)
 
         dims = [probe_dimensions(p) for p in part_paths]
@@ -202,9 +272,7 @@ def orient_segments(input_path: Path, segments: list[dict], output_path: Path) -
             "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac",
             str(output_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip())
+        _run_ffmpeg_progress(cmd, total, on_progress, cursor, 1.0)
 
 
 def main() -> None:
