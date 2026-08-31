@@ -89,7 +89,10 @@ function pollProgress(jobId) {
         const job = await res.json();
 
         if (job.status === "processing") {
-          setProgress(job.percent, `Compression en cours... ${job.percent.toFixed(0)}%`);
+          const label = job.percent >= 100
+            ? "Enregistrement des métadonnées..."
+            : `Compression en cours... ${job.percent.toFixed(0)}%`;
+          setProgress(job.percent, label);
         } else if (job.status === "done") {
           clearInterval(interval);
           setProgress(100, "Compression terminée.");
@@ -102,7 +105,7 @@ function pollProgress(jobId) {
         clearInterval(interval);
         reject(e);
       }
-    }, 600);
+    }, 300);
   });
 }
 
