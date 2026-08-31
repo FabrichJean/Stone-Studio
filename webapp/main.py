@@ -51,8 +51,9 @@ THUMBS_DIR.mkdir(exist_ok=True)
 
 DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 
-# Suivi en mémoire des compressions en cours (mono-process : suffisant pour cet usage local).
+# Suivi en mémoire des tâches en cours (mono-process : suffisant pour cet usage local).
 COMPRESS_JOBS: dict[str, dict] = {}
+EXTRACT_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -204,6 +205,30 @@ def project_thumbnail(project_id: str):
     return FileResponse(path, media_type="image/jpeg")
 
 
+def _run_extract_job(
+    job_id: str, video_path: Path, output_path: Path, filename: str,
+    fmt: str, bitrate: str | None, channels: str | None, sample_rate: int | None,
+) -> None:
+    def on_progress(frac: float) -> None:
+        EXTRACT_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    try:
+        extract_audio(video_path, output_path, fmt, bitrate, channels, sample_rate, on_progress)
+    except RuntimeError as e:
+        EXTRACT_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    stem = Path(filename).stem
+    output_name = f"{stem}.{fmt}"
+    save_project("extract_audio", filename, "output", output_path.name, output_name)
+    EXTRACT_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": Path(output_path.name).stem,
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+    }
+
+
 @app.post("/api/extract-audio")
 async def api_extract_audio(
     video: UploadFile = File(...),
@@ -225,16 +250,23 @@ async def api_extract_audio(
         shutil.copyfileobj(video.file, f)
     save_project("upload", None, "uploads", video_file, video.filename)
 
-    try:
-        extract_audio(video_path, output_path, format, bitrate, channels, sample_rate)
-    except RuntimeError as e:
-        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+    EXTRACT_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_extract_job,
+        args=(job_id, video_path, output_path, video.filename, format, bitrate, channels, sample_rate),
+        daemon=True,
+    )
+    thread.start()
 
-    stem = Path(video.filename).stem
-    output_name = f"{stem}.{format}"
-    save_project("extract_audio", video.filename, "output", output_file, output_name)
+    return {"job_id": job_id}
 
-    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+
+@app.get("/api/extract-audio/{job_id}/progress")
+def extract_progress(job_id: str):
+    job = EXTRACT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
 
 
 @app.post("/api/trim-media")

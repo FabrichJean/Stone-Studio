@@ -6,8 +6,13 @@ const info = document.getElementById("info");
 const extractBtn = document.getElementById("extractBtn");
 const status = document.getElementById("status");
 const pickProjectLink = document.getElementById("pickProjectLink");
+const progressWrap = document.getElementById("progressWrap");
+const progressFill = document.getElementById("progressFill");
+const progressLabel = document.getElementById("progressLabel");
+const downloadBtn = document.getElementById("downloadBtn");
 
 let selectedFile = null;
+let pendingDownload = null;
 
 dropzone.addEventListener("click", () => fileInput.click());
 
@@ -43,6 +48,9 @@ function handleFile(file) {
   extractBtn.disabled = false;
   status.textContent = "";
   status.className = "status";
+  progressWrap.hidden = true;
+  downloadBtn.hidden = true;
+  pendingDownload = null;
 
   const url = URL.createObjectURL(file);
   preview.src = url;
@@ -64,12 +72,47 @@ function handleFile(file) {
   dropzone.querySelector(".dropzone-title").textContent = file.name;
 }
 
+function setProgress(percent, label) {
+  progressWrap.hidden = false;
+  progressFill.style.width = `${percent}%`;
+  progressLabel.textContent = label;
+}
+
+function pollExtractProgress(jobId) {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/extract-audio/${jobId}/progress`);
+        if (!res.ok) throw new Error("Tâche introuvable");
+        const job = await res.json();
+
+        if (job.status === "processing") {
+          setProgress(job.percent, `Extraction en cours... ${job.percent.toFixed(0)}%`);
+        } else if (job.status === "done") {
+          clearInterval(interval);
+          setProgress(100, "Extraction terminée.");
+          resolve(job);
+        } else if (job.status === "error") {
+          clearInterval(interval);
+          reject(new Error(job.error || "Erreur inconnue"));
+        }
+      } catch (e) {
+        clearInterval(interval);
+        reject(e);
+      }
+    }, 600);
+  });
+}
+
 extractBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
 
   extractBtn.disabled = true;
+  downloadBtn.hidden = true;
+  pendingDownload = null;
   status.className = "status";
-  status.textContent = "Extraction en cours...";
+  status.textContent = "";
+  setProgress(0, "Démarrage de l'extraction...");
 
   const formData = new FormData();
   formData.append("video", selectedFile);
@@ -79,27 +122,38 @@ extractBtn.addEventListener("click", async () => {
   formData.append("sample_rate", document.getElementById("sampleRate").value);
 
   try {
-    const res = await fetch("/api/extract-audio", { method: "POST", body: formData });
-    if (!res.ok) {
-      const err = await res.json();
+    const startRes = await fetch("/api/extract-audio", { method: "POST", body: formData });
+    if (!startRes.ok) {
+      const err = await startRes.json();
       throw new Error(err.detail || "Erreur inconnue");
     }
+    const { job_id } = await startRes.json();
 
-    const blob = await res.blob();
-    const format = document.getElementById("format").value;
-    const stem = selectedFile.name.replace(/\.[^/.]+$/, "");
+    const job = await pollExtractProgress(job_id);
 
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${stem}.${format}`;
-    a.click();
+    const dlRes = await fetch(`/api/projects/${job.project_id}/download`);
+    if (!dlRes.ok) throw new Error("Téléchargement impossible");
+    const blob = await dlRes.blob();
 
-    status.textContent = "Audio extrait avec succès.";
+    pendingDownload = { blob, name: job.output_name };
+    downloadBtn.hidden = false;
+
+    status.textContent = `Audio extrait avec succès (${formatBytes(job.output_size)}).`;
     status.className = "status success";
   } catch (e) {
     status.textContent = `Erreur : ${e.message}`;
     status.className = "status error";
+    progressWrap.hidden = true;
   } finally {
     extractBtn.disabled = false;
   }
+});
+
+downloadBtn.addEventListener("click", () => {
+  if (!pendingDownload) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(pendingDownload.blob);
+  a.download = pendingDownload.name;
+  a.click();
+  URL.revokeObjectURL(a.href);
 });

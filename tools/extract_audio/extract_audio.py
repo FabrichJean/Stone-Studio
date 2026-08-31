@@ -2,10 +2,12 @@
 """Extrait la piste audio d'une vidéo via ffmpeg."""
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable
 
 FORMATS = {
     "mp3": {"codec": "libmp3lame", "bitrates": ["128k", "192k", "256k", "320k"]},
@@ -16,6 +18,30 @@ FORMATS = {
 
 CHANNELS = {"mono": 1, "stereo": 2}
 
+TIME_RE = re.compile(r"^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$")
+
+ProgressCallback = Callable[[float], None]
+
+
+def probe_duration(path: Path) -> float | None:
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return float(result.stdout.strip())
+    except ValueError:
+        return None
+
+
+def _parse_out_time(value: str) -> float | None:
+    match = TIME_RE.match(value)
+    if not match:
+        return None
+    h, m, s = match.groups()
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
 
 def extract_audio(
     video_path: Path,
@@ -24,6 +50,7 @@ def extract_audio(
     bitrate: str | None = None,
     channels: str | None = None,
     sample_rate: int | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> None:
     info = FORMATS[fmt]
     cmd = ["ffmpeg", "-y", "-i", str(video_path), "-vn", "-acodec", info["codec"]]
@@ -37,9 +64,27 @@ def extract_audio(
 
     cmd.append(str(output_path))
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip())
+    duration = probe_duration(video_path) if on_progress else None
+
+    full_cmd = cmd + ["-progress", "pipe:1", "-nostats"]
+    proc = subprocess.Popen(full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line.startswith("out_time="):
+            continue
+        elapsed = _parse_out_time(line.split("=", 1)[1])
+        if elapsed is not None and duration and on_progress:
+            on_progress(max(0.0, min(elapsed / duration, 1.0)))
+
+    stderr = proc.stderr.read() if proc.stderr else ""
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(stderr.strip())
+
+    if on_progress:
+        on_progress(1.0)
 
 
 def main() -> None:
@@ -64,12 +109,21 @@ def main() -> None:
 
     output_path = args.output or args.video.with_suffix(f".{args.format}")
 
+    def print_progress(frac: float) -> None:
+        bar_width = 30
+        filled = int(bar_width * frac)
+        bar = "#" * filled + "-" * (bar_width - filled)
+        print(f"\r[{bar}] {frac * 100:5.1f}%", end="", flush=True)
+
     try:
-        extract_audio(args.video, output_path, args.format, args.bitrate, args.channels, args.sample_rate)
+        extract_audio(
+            args.video, output_path, args.format, args.bitrate, args.channels, args.sample_rate, print_progress
+        )
     except RuntimeError as e:
+        print()
         sys.exit(f"Erreur ffmpeg : {e}")
 
-    print(f"Audio extrait : {output_path}")
+    print(f"\nAudio extrait : {output_path}")
 
 
 if __name__ == "__main__":
