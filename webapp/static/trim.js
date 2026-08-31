@@ -19,8 +19,13 @@ const endLabel = document.getElementById("endLabel");
 const durationLabel = document.getElementById("durationLabel");
 const segmentsList = document.getElementById("segmentsList");
 const pickProjectLink = document.getElementById("pickProjectLink");
+const progressWrap = document.getElementById("progressWrap");
+const progressFill = document.getElementById("progressFill");
+const progressLabel = document.getElementById("progressLabel");
+const downloadBtn = document.getElementById("downloadBtn");
 
 let selectedFile = null;
+let pendingDownload = null;
 let mediaDuration = 0;
 let startTime = 0;
 let endTime = 0;
@@ -68,6 +73,9 @@ function handleFile(file) {
   selectedFile = file;
   status.textContent = "";
   status.className = "status";
+  progressWrap.hidden = true;
+  downloadBtn.hidden = true;
+  pendingDownload = null;
   segments = [];
   renderSegments();
 
@@ -292,14 +300,49 @@ addSegmentBtn.addEventListener("click", () => {
   }
 });
 
+function setProgress(percent, label) {
+  progressWrap.hidden = false;
+  progressFill.style.width = `${percent}%`;
+  progressLabel.textContent = label;
+}
+
+function pollTrimProgress(jobId) {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/trim-media/${jobId}/progress`);
+        if (!res.ok) throw new Error("Tâche introuvable");
+        const job = await res.json();
+
+        if (job.status === "processing") {
+          setProgress(job.percent, `Découpage en cours... ${job.percent.toFixed(0)}%`);
+        } else if (job.status === "done") {
+          clearInterval(interval);
+          setProgress(100, "Découpage terminé.");
+          resolve(job);
+        } else if (job.status === "error") {
+          clearInterval(interval);
+          reject(new Error(job.error || "Erreur inconnue"));
+        }
+      } catch (e) {
+        clearInterval(interval);
+        reject(e);
+      }
+    }, 600);
+  });
+}
+
 trimBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
 
   const toExport = segments.length > 0 ? segments : [{ start: startTime, end: endTime }];
 
   trimBtn.disabled = true;
+  downloadBtn.hidden = true;
+  pendingDownload = null;
   status.className = "status";
-  status.textContent = toExport.length > 1 ? "Découpage et combinaison en cours..." : "Découpage en cours...";
+  status.textContent = "";
+  setProgress(0, toExport.length > 1 ? "Démarrage du découpage et de la combinaison..." : "Démarrage du découpage...");
 
   const formData = new FormData();
   formData.append("media", selectedFile);
@@ -309,28 +352,33 @@ trimBtn.addEventListener("click", async () => {
   );
 
   try {
-    const res = await fetch("/api/trim-media", { method: "POST", body: formData });
-    if (!res.ok) {
-      const err = await res.json();
+    const startRes = await fetch("/api/trim-media", { method: "POST", body: formData });
+    if (!startRes.ok) {
+      const err = await startRes.json();
       throw new Error(err.detail || "Erreur inconnue");
     }
+    const { job_id } = await startRes.json();
 
-    const blob = await res.blob();
-    const stem = selectedFile.name.replace(/\.[^/.]+$/, "");
-    const ext = selectedFile.name.split(".").pop();
-    const suffix = toExport.length > 1 ? "combined" : "trim";
+    const job = await pollTrimProgress(job_id);
 
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${stem}_${suffix}.${ext}`;
-    a.click();
+    pendingDownload = { projectId: job.project_id, name: job.output_name };
+    downloadBtn.hidden = false;
 
-    status.textContent = "Export réussi.";
+    status.textContent = `Export réussi (${formatBytesCommon(job.output_size)}).`;
     status.className = "status success";
   } catch (e) {
     status.textContent = `Erreur : ${e.message}`;
     status.className = "status error";
+    progressWrap.hidden = true;
   } finally {
     trimBtn.disabled = false;
   }
+});
+
+downloadBtn.addEventListener("click", () => {
+  if (!pendingDownload) return;
+  const a = document.createElement("a");
+  a.href = `/api/projects/${pendingDownload.projectId}/download`;
+  a.download = pendingDownload.name;
+  a.click();
 });
