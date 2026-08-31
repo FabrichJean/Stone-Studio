@@ -1024,3 +1024,83 @@ h1, h2, h3, .serif {
   color: var(--text-muted);
   font-size: 13px;
 }
+
+/* Enregistrement écran */
+.record-audio {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-top: 16px;
+}
+
+.record-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dark);
+  cursor: pointer;
+}
+
+.record-check input { accent-color: var(--accent); width: 15px; height: 15px; }
+.record-check em { color: var(--text-muted); font-style: normal; font-size: 12px; }
+
+.record-stage { position: relative; }
+
+.record-stage #livePreview {
+  width: 100%;
+  max-height: 420px;
+  border-radius: 8px;
+  background: #000;
+}
+
+.rec-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e2483d;
+  animation: rec-blink 1.2s infinite;
+}
+
+.rec-badge.paused .rec-dot { background: var(--text-muted); animation: none; }
+
+@keyframes rec-blink {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0.15; }
+}
+
+.record-timer-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.record-timer {
+  font-family: Georgia, "Iowan Old Style", Palatino, serif;
+  font-size: 28px;
+  color: var(--text-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.record-size { font-size: 13px; color: var(--text-muted); }
+
+.record-controls { margin-top: 20px; }
+.record-controls .record-btn { margin-top: 0; }
+.record-controls .btn-secondary { flex: 1; justify-content: center; }
