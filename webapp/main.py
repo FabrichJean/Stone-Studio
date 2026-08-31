@@ -461,4 +461,6 @@ async def api_screen_record(
     output_name = f"{stem}{RECORD_FORMATS[format]['suffix']}"
     save_project("screen_record", None, "output", output_file, output_name)
 
-    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+    # Le navigateur possède déjà la capture : renvoyer le fichier finalisé doublerait
+    # inutilement le transfert. On ne retourne que la fiche du projet créé.
+    return {"id": Path(output_file).stem, "output_name": output_name, "size": output_path.stat().st_size}

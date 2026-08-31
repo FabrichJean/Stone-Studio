@@ -12,7 +12,7 @@ const startBtn = document.getElementById("startBtn");
 const pauseBtn = document.getElementById("pauseBtn");
 const stopBtn = document.getElementById("stopBtn");
 const restartBtn = document.getElementById("restartBtn");
-const saveBtn = document.getElementById("saveBtn");
+const retryBtn = document.getElementById("retryBtn");
 const status = document.getElementById("status");
 const info = document.getElementById("info");
 
@@ -200,7 +200,7 @@ startBtn.addEventListener("click", async () => {
 
   setupPanel.hidden = true;
   resultStage.hidden = true;
-  saveBtn.hidden = true;
+  retryBtn.hidden = true;
   restartBtn.hidden = true;
   info.innerHTML = "";
   captureStage.hidden = false;
@@ -260,8 +260,6 @@ function finishRecording(mimeType) {
   pauseBtn.hidden = true;
   stopBtn.hidden = true;
   restartBtn.hidden = false;
-  saveBtn.hidden = false;
-  saveBtn.disabled = false;
 
   resultPreview.src = URL.createObjectURL(recordedBlob);
   resultStage.hidden = false;
@@ -275,7 +273,7 @@ function finishRecording(mimeType) {
     <div><span>Taille brute</span><span>${formatBytesCommon(recordedBlob.size)}</span></div>
   `;
 
-  setStatus("Enregistrement terminé. Vérifiez l'aperçu puis enregistrez-le.", "success");
+  saveRecording();
 }
 
 restartBtn.addEventListener("click", () => {
@@ -287,7 +285,7 @@ restartBtn.addEventListener("click", () => {
   resultStage.hidden = true;
   timerRow.hidden = true;
   restartBtn.hidden = true;
-  saveBtn.hidden = true;
+  retryBtn.hidden = true;
   info.innerHTML = "";
   setupPanel.hidden = false;
   startBtn.hidden = false;
@@ -295,11 +293,11 @@ restartBtn.addEventListener("click", () => {
   setStatus("");
 });
 
-saveBtn.addEventListener("click", async () => {
+async function saveRecording() {
   if (!recordedBlob) return;
 
   const format = document.getElementById("format").value;
-  saveBtn.disabled = true;
+  retryBtn.hidden = true;
   restartBtn.disabled = true;
   setStatus("Finalisation du fichier (conversion ffmpeg)…");
 
@@ -315,22 +313,18 @@ saveBtn.addEventListener("click", async () => {
       const err = await res.json();
       throw new Error(err.detail || "Erreur inconnue");
     }
-
-    const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${recordedName}.${format}`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-
-    setStatus("Enregistrement ajouté à vos projets.", "success");
+    const project = await res.json();
+    setStatus(`Enregistrement ajouté à vos projets : ${project.output_name} (${formatBytesCommon(project.size)}).`, "success");
   } catch (e) {
-    setStatus(`Erreur : ${e.message}`, "error");
-    saveBtn.disabled = false;
+    // La capture n'est que dans le navigateur : on garde de quoi retenter.
+    setStatus(`Erreur : ${e.message}. L'enregistrement n'est pas encore sauvegardé.`, "error");
+    retryBtn.hidden = false;
   } finally {
     restartBtn.disabled = false;
   }
-});
+}
+
+retryBtn.addEventListener("click", saveRecording);
 
 window.addEventListener("beforeunload", (e) => {
   if (recorder && recorder.state !== "inactive") {
