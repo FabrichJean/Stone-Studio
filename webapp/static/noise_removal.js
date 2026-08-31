@@ -38,6 +38,7 @@ function handleFile(file) {
   applyBtn.disabled = false;
   status.textContent = "";
   status.className = "status";
+  document.getElementById("sendToWrap").hidden = true;
 
   const url = URL.createObjectURL(file);
   preview.src = url;
@@ -77,6 +78,7 @@ applyBtn.addEventListener("click", async () => {
       throw new Error(err.detail || "Erreur inconnue");
     }
 
+    const projectId = res.headers.get("X-Project-Id");
     const blob = await res.blob();
     const stem = selectedFile.name.replace(/\.[^/.]+$/, "");
     const ext = selectedFile.name.slice(selectedFile.name.lastIndexOf("."));
@@ -87,6 +89,8 @@ applyBtn.addEventListener("click", async () => {
     a.click();
     URL.revokeObjectURL(a.href);
 
+    if (projectId) renderSendTo("sendToWrap", projectId, "noise_removal");
+
     status.textContent = "Bruit réduit avec succès.";
     status.className = "status success";
   } catch (e) {
@@ -96,3 +100,5 @@ applyBtn.addEventListener("click", async () => {
     applyBtn.disabled = false;
   }
 });
+
+autoLoadFromUrl(handleFile);
