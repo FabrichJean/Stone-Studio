@@ -84,72 +84,101 @@
 </div>
 
 <div id="allToolsModal" class="modal-overlay" hidden>
-  <div class="modal all-tools-modal">
-    <div class="modal-header">
-      <h3>Tous les outils</h3>
+  <div class="launcher">
+    <div class="launcher-header">
+      <span class="launcher-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.2l1.6 4.2 4.2 1.6-4.2 1.6L8 12.8l-1.6-4.2-4.2-1.6 4.2-1.6z"/></svg>
+      </span>
+      <span class="launcher-title">Tous les outils</span>
       <button type="button" class="modal-close" id="closeToolsModal">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
       </button>
     </div>
-    <div class="modal-body">
-      <div class="nav-section-label">Outils</div>
-      <div class="tools-grid">
-        <a class="tool-card {{ 'active' if active_tool == 'extract_audio' else '' }}" href="/">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V8a6 6 0 0 1 12 0v1"/><rect x="1.5" y="9" width="3" height="4" rx="1"/><rect x="11.5" y="9" width="3" height="4" rx="1"/></svg></span>
-          <span>Extraction audio</span>
-        </a>
-        <a class="tool-card {{ 'active' if active_tool == 'trim_media' else '' }}" href="/trim">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><path d="M5.3 5L14 14M5.3 11L14 2"/></svg></span>
-          <span>Trim media</span>
-        </a>
-        <a class="tool-card {{ 'active' if active_tool == 'speed_media' else '' }}" href="/speed">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l5 4-5 4"/><path d="M9 4l5 4-5 4"/></svg></span>
-          <span>Speed</span>
-        </a>
-        <a class="tool-card {{ 'active' if active_tool == 'orientation' else '' }}" href="/orientation">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg></span>
-          <span>Orientation</span>
-        </a>
-        <a class="tool-card {{ 'active' if active_tool == 'compress_media' else '' }}" href="/compress">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg></span>
-          <span>Compression vidéo</span>
-        </a>
-        <a class="tool-card {{ 'active' if active_tool == 'screen_record' else '' }}" href="/record">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg></span>
-          <span>Enregistrement écran</span>
-        </a>
-        <a class="tool-card {{ 'active' if active_tool == 'noise_removal' else '' }}" href="/noise-removal">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h2l2-4v8l2-4h2l2 3v-6l2 3"/></svg></span>
-          <span>Suppression bruit</span>
-        </a>
-        <div class="tool-card disabled">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 4H5a2.5 2.5 0 0 0-2.5 2.5V7"/><path d="M4.5 12H11a2.5 2.5 0 0 0 2.5-2.5V9"/><path d="M9.5 1.5L11.5 4l-2 2.5"/><path d="M6.5 14.5l-2-2.5 2-2.5"/></svg></span>
-          <span>Conversion vidéo</span>
-        </div>
-        <div class="tool-card disabled">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V3"/><path d="M8 8v5"/><path d="M6 11l2 2 2-2"/></svg></span>
-          <span>Fusion vidéo</span>
-        </div>
-        <div class="tool-card disabled">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="12" height="8" rx="1.5"/><path d="M4.5 7.5h2.5M8.5 7.5h3M4.5 9.5h5.5"/></svg></span>
-          <span>Sous-titres auto</span>
-        </div>
-      </div>
 
-      <div class="nav-section-label">Projets</div>
-      <div class="tools-grid">
-        <a class="tool-card {{ 'active' if active_tool == 'projects' else '' }}" href="/projects">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.5h5.2A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7z"/></svg></span>
-          <span>Mes projets</span>
-        </a>
-        <div class="tool-card disabled">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.2l2.2 1.6"/></svg></span>
-          <span>Fichiers récents</span>
-        </div>
-        <div class="tool-card disabled">
-          <span class="icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4.5 2h4.5l3 3v9h-7.5z"/><path d="M9 2v3h3"/></svg></span>
-          <span>Exports</span>
-        </div>
+    <div class="launcher-filters">
+      <button type="button" class="filter-pill active" data-filter="all">Tous</button>
+      <button type="button" class="filter-pill" data-filter="outils">Outils</button>
+      <button type="button" class="filter-pill" data-filter="projets">Projets</button>
+    </div>
+
+    <div class="launcher-grid">
+      <a class="tool-tile {{ 'active' if active_tool == 'extract_audio' else '' }}" href="/" data-category="outils">
+        <span class="tile-icon" style="background:#d97757">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V8a6 6 0 0 1 12 0v1"/><rect x="1.5" y="9" width="3" height="4" rx="1"/><rect x="11.5" y="9" width="3" height="4" rx="1"/></svg>
+        </span>
+        <span>Extraction audio</span>
+      </a>
+      <a class="tool-tile {{ 'active' if active_tool == 'trim_media' else '' }}" href="/trim" data-category="outils">
+        <span class="tile-icon" style="background:#3b82f6">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><path d="M5.3 5L14 14M5.3 11L14 2"/></svg>
+        </span>
+        <span>Trim media</span>
+      </a>
+      <a class="tool-tile {{ 'active' if active_tool == 'speed_media' else '' }}" href="/speed" data-category="outils">
+        <span class="tile-icon" style="background:#8b5cf6">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l5 4-5 4"/><path d="M9 4l5 4-5 4"/></svg>
+        </span>
+        <span>Speed</span>
+      </a>
+      <a class="tool-tile {{ 'active' if active_tool == 'orientation' else '' }}" href="/orientation" data-category="outils">
+        <span class="tile-icon" style="background:#14b8a6">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg>
+        </span>
+        <span>Orientation</span>
+      </a>
+      <a class="tool-tile {{ 'active' if active_tool == 'compress_media' else '' }}" href="/compress" data-category="outils">
+        <span class="tile-icon" style="background:#ec4899">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg>
+        </span>
+        <span>Compression vidéo</span>
+      </a>
+      <a class="tool-tile {{ 'active' if active_tool == 'screen_record' else '' }}" href="/record" data-category="outils">
+        <span class="tile-icon" style="background:#ef4444">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="#fff" stroke="none"/></svg>
+        </span>
+        <span>Enregistrement écran</span>
+      </a>
+      <a class="tool-tile {{ 'active' if active_tool == 'noise_removal' else '' }}" href="/noise-removal" data-category="outils">
+        <span class="tile-icon" style="background:#22c55e">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h2l2-4v8l2-4h2l2 3v-6l2 3"/></svg>
+        </span>
+        <span>Suppression bruit</span>
+      </a>
+      <div class="tool-tile disabled" data-category="outils">
+        <span class="tile-icon tile-icon-disabled">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 4H5a2.5 2.5 0 0 0-2.5 2.5V7"/><path d="M4.5 12H11a2.5 2.5 0 0 0 2.5-2.5V9"/><path d="M9.5 1.5L11.5 4l-2 2.5"/><path d="M6.5 14.5l-2-2.5 2-2.5"/></svg>
+        </span>
+        <span>Conversion vidéo</span>
+      </div>
+      <div class="tool-tile disabled" data-category="outils">
+        <span class="tile-icon tile-icon-disabled">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V3"/><path d="M8 8v5"/><path d="M6 11l2 2 2-2"/></svg>
+        </span>
+        <span>Fusion vidéo</span>
+      </div>
+      <div class="tool-tile disabled" data-category="outils">
+        <span class="tile-icon tile-icon-disabled">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="12" height="8" rx="1.5"/><path d="M4.5 7.5h2.5M8.5 7.5h3M4.5 9.5h5.5"/></svg>
+        </span>
+        <span>Sous-titres auto</span>
+      </div>
+      <a class="tool-tile {{ 'active' if active_tool == 'projects' else '' }}" href="/projects" data-category="projets">
+        <span class="tile-icon" style="background:#f59e0b">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.5h5.2A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7z"/></svg>
+        </span>
+        <span>Mes projets</span>
+      </a>
+      <div class="tool-tile disabled" data-category="projets">
+        <span class="tile-icon tile-icon-disabled">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.2l2.2 1.6"/></svg>
+        </span>
+        <span>Fichiers récents</span>
+      </div>
+      <div class="tool-tile disabled" data-category="projets">
+        <span class="tile-icon tile-icon-disabled">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"><path d="M4.5 2h4.5l3 3v9h-7.5z"/><path d="M9 2v3h3"/></svg>
+        </span>
+        <span>Exports</span>
       </div>
     </div>
   </div>
@@ -168,6 +197,18 @@
   closeBtn.addEventListener("click", close);
   modal.addEventListener("click", function (e) {
     if (e.target === modal) close();
+  });
+
+  var pills = document.querySelectorAll(".filter-pill");
+  var tiles = document.querySelectorAll(".tool-tile");
+  pills.forEach(function (pill) {
+    pill.addEventListener("click", function () {
+      pills.forEach(function (p) { p.classList.toggle("active", p === pill); });
+      var filter = pill.dataset.filter;
+      tiles.forEach(function (tile) {
+        tile.style.display = filter === "all" || tile.dataset.category === filter ? "" : "none";
+      });
+    });
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !modal.hidden) close();

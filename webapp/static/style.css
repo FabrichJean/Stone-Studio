@@ -128,111 +128,147 @@ h1, h2, h3, .serif {
   text-align: left;
 }
 
-/* Modal — catalogue complet des outils */
+/* Modal — catalogue complet des outils, style "Launchpad" macOS */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(23, 19, 15, 0.4);
+  background: rgba(20, 18, 15, 0.55);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  padding: 5vh 4vw;
 }
 
 .modal-overlay[hidden] {
   display: none;
 }
 
-.modal {
-  background: var(--panel);
-  border-radius: 12px;
-  width: 560px;
-  max-width: 90vw;
-  max-height: 80vh;
+.launcher {
+  width: 100%;
+  max-width: 980px;
+  height: 100%;
+  max-height: 780px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
 }
 
-.modal-header {
+.launcher-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  gap: 10px;
+  margin: 0 auto 18px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  width: min(420px, 90%);
 }
 
-.modal-header h3 {
-  margin: 0;
-  font-size: 16px;
+.launcher-icon {
+  display: flex;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.launcher-title {
+  flex: 1;
+  color: #fff;
+  font-size: 15px;
   font-family: Georgia, "Iowan Old Style", Palatino, serif;
-  font-weight: 400;
 }
 
 .modal-close {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none;
+  background: rgba(255, 255, 255, 0.08);
   border: none;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.modal-close:hover { background: #f5f2ec; color: var(--text-dark); }
+.modal-close:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
 
-.modal-body {
+.launcher-filters {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.filter-pill {
+  padding: 7px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.filter-pill:hover { background: rgba(255, 255, 255, 0.14); }
+
+.filter-pill.active {
+  background: rgba(255, 255, 255, 0.92);
+  color: #1a1816;
+  font-weight: 600;
+}
+
+.launcher-grid {
+  flex: 1;
   overflow-y: auto;
-  padding: 16px 20px 20px;
-}
-
-.modal-body .nav-section-label {
-  padding: 4px 0 8px;
-  color: var(--text-muted);
-}
-
-.modal-body .nav-section-label:not(:first-child) { margin-top: 16px; }
-
-.tools-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 22px 8px;
+  align-content: start;
+  padding: 4px 8px;
 }
 
-.tool-card {
+.tool-tile {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 16px 8px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text-dark);
+  padding: 6px;
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.92);
   text-decoration: none;
   text-align: center;
   font-size: 12px;
+  transition: transform 0.12s ease;
 }
 
-.tool-card .icon { color: var(--accent); }
+.tool-tile:hover { transform: scale(1.06); }
 
-.tool-card:hover { background: #f5f2ec; border-color: var(--accent); }
+.tool-tile.active .tile-icon { box-shadow: 0 0 0 2.5px #fff; }
+.tool-tile.active span:last-child { font-weight: 600; }
 
-.tool-card.active {
-  background: #fbf3ee;
-  border-color: var(--accent);
-  font-weight: 600;
+.tile-icon {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 15px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
-.tool-card.disabled {
-  color: #c7c3b8;
+.tile-icon-disabled { background: rgba(255, 255, 255, 0.12); }
+
+.tool-tile.disabled {
+  color: rgba(255, 255, 255, 0.4);
   cursor: not-allowed;
 }
 
-.tool-card.disabled .icon { color: #c7c3b8; }
+.tool-tile.disabled:hover { transform: none; }
 
 .pro-card {
   margin-top: auto;
