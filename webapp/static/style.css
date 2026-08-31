@@ -119,6 +119,121 @@ h1, h2, h3, .serif {
   pointer-events: none;
 }
 
+.nav-item-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+/* Modal — catalogue complet des outils */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 19, 15, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal {
+  background: var(--panel);
+  border-radius: 12px;
+  width: 560px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-family: Georgia, "Iowan Old Style", Palatino, serif;
+  font-weight: 400;
+}
+
+.modal-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.modal-close:hover { background: #f5f2ec; color: var(--text-dark); }
+
+.modal-body {
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+}
+
+.modal-body .nav-section-label {
+  padding: 4px 0 8px;
+  color: var(--text-muted);
+}
+
+.modal-body .nav-section-label:not(:first-child) { margin-top: 16px; }
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dark);
+  text-decoration: none;
+  text-align: center;
+  font-size: 12px;
+}
+
+.tool-card .icon { color: var(--accent); }
+
+.tool-card:hover { background: #f5f2ec; border-color: var(--accent); }
+
+.tool-card.active {
+  background: #fbf3ee;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.tool-card.disabled {
+  color: #c7c3b8;
+  cursor: not-allowed;
+}
+
+.tool-card.disabled .icon { color: #c7c3b8; }
+
 .pro-card {
   margin-top: auto;
   background: var(--sidebar-card-bg);
