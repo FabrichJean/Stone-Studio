@@ -42,8 +42,32 @@ THUMBS_DIR.mkdir(exist_ok=True)
 DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 
 app = FastAPI(title="Stone Studio")
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """Sans en-tête Cache-Control, le navigateur applique sa fraîcheur heuristique et
+    peut servir un JS/CSS périmé après une modification. On force la revalidation."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+
+def static_url(name: str) -> str:
+    """Ajoute la date de modification à l'URL : le navigateur ne peut pas resservir
+    une version périmée d'un fichier modifié, même s'il l'a déjà en cache."""
+    path = STATIC_DIR / name
+    version = int(path.stat().st_mtime) if path.exists() else 0
+    return f"/static/{name}?v={version}"
+
+
+templates.env.globals["static_url"] = static_url
 
 TOOL_LABELS = {
     "upload": "Fichier importé",
@@ -281,6 +305,18 @@ async def api_speed_media(
     return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
 
 
+def _validate_crop_rect(rect) -> None:
+    if not isinstance(rect, dict) or set(rect) != {"x", "y", "w", "h"}:
+        raise HTTPException(400, "'crop_rect' doit contenir x, y, w, h.")
+    for key in ("x", "y", "w", "h"):
+        if not isinstance(rect[key], (int, float)) or not 0 <= rect[key] <= 1:
+            raise HTTPException(400, "Les valeurs de 'crop_rect' doivent être entre 0 et 1.")
+    if rect["w"] <= 0 or rect["h"] <= 0:
+        raise HTTPException(400, "Le cadre personnalisé doit avoir une largeur et une hauteur positives.")
+    if rect["x"] + rect["w"] > 1.001 or rect["y"] + rect["h"] > 1.001:
+        raise HTTPException(400, "Le cadre personnalisé dépasse les limites de l'image.")
+
+
 @app.post("/api/orientation")
 async def api_orientation(
     video: UploadFile = File(...),
@@ -289,11 +325,20 @@ async def api_orientation(
     segments: str | None = Form(None),  # JSON: [{"start","end","actions":[...],"aspect_ratio","aspect_position"}, ...]
     aspect_ratio: str | None = Form(None),  # ex: "portrait_9_16" (mode=global uniquement)
     aspect_position: float = Form(0.5),  # 0..1 — position du recadrage le long de l'axe rogné
+    crop_rect: str | None = Form(None),  # JSON {"x","y","w","h"} fractions 0..1 (mode=global, format personnalisé)
 ):
     if mode not in ("global", "segments"):
         raise HTTPException(400, "Mode invalide (global ou segments).")
     if aspect_ratio and aspect_ratio not in ASPECT_RATIOS:
         raise HTTPException(400, f"Format d'affichage non supporté : {aspect_ratio}")
+
+    parsed_crop_rect = None
+    if crop_rect:
+        try:
+            parsed_crop_rect = json.loads(crop_rect)
+        except json.JSONDecodeError as e:
+            raise HTTPException(400, "Le champ 'crop_rect' doit être un JSON valide.") from e
+        _validate_crop_rect(parsed_crop_rect)
 
     job_id = uuid.uuid4().hex
     suffix = Path(video.filename).suffix
@@ -318,10 +363,13 @@ async def api_orientation(
             for a in action_list:
                 if a not in ORIENTATION_ACTIONS:
                     raise HTTPException(400, f"Action non supportée : {a}")
-            if not action_list and not aspect_ratio:
+            if not action_list and not aspect_ratio and not parsed_crop_rect:
                 raise HTTPException(400, "Choisissez au moins une action ou un format d'affichage.")
 
-            change_orientation(video_path, output_path, action_list, aspect_ratio=aspect_ratio, aspect_position=aspect_position)
+            change_orientation(
+                video_path, output_path, action_list,
+                aspect_ratio=aspect_ratio, aspect_position=aspect_position, crop_rect=parsed_crop_rect,
+            )
         else:
             try:
                 seg_list = json.loads(segments or "[]")
@@ -337,6 +385,7 @@ async def api_orientation(
                 seg_actions = seg.get("actions") or []
                 seg_aspect = seg.get("aspect_ratio")
                 seg_pos = seg.get("aspect_position", 0.5)
+                seg_crop_rect = seg.get("crop_rect")
 
                 if not is_valid_time(start or "") or not is_valid_time(end or ""):
                     raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
@@ -347,12 +396,15 @@ async def api_orientation(
                         raise HTTPException(400, f"Action non supportée dans un segment : {a}")
                 if seg_aspect and seg_aspect not in ASPECT_RATIOS:
                     raise HTTPException(400, f"Format non supporté dans un segment : {seg_aspect}")
-                if not seg_actions and not seg_aspect:
+                if seg_crop_rect:
+                    _validate_crop_rect(seg_crop_rect)
+                if not seg_actions and not seg_aspect and not seg_crop_rect:
                     raise HTTPException(400, "Chaque segment doit avoir au moins une action ou un format.")
 
                 pairs.append({
                     "start": start, "end": end, "actions": seg_actions,
                     "aspect_ratio": seg_aspect, "aspect_position": seg_pos,
+                    "crop_rect": seg_crop_rect,
                 })
 
             orient_segments(video_path, pairs, output_path)
