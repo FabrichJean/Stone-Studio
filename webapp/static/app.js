@@ -131,11 +131,7 @@ extractBtn.addEventListener("click", async () => {
 
     const job = await pollExtractProgress(job_id);
 
-    const dlRes = await fetch(`/api/projects/${job.project_id}/download`);
-    if (!dlRes.ok) throw new Error("Téléchargement impossible");
-    const blob = await dlRes.blob();
-
-    pendingDownload = { blob, name: job.output_name };
+    pendingDownload = { projectId: job.project_id, name: job.output_name };
     downloadBtn.hidden = false;
 
     status.textContent = `Audio extrait avec succès (${formatBytes(job.output_size)}).`;
@@ -152,8 +148,7 @@ extractBtn.addEventListener("click", async () => {
 downloadBtn.addEventListener("click", () => {
   if (!pendingDownload) return;
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(pendingDownload.blob);
+  a.href = `/api/projects/${pendingDownload.projectId}/download`;
   a.download = pendingDownload.name;
   a.click();
-  URL.revokeObjectURL(a.href);
 });
