@@ -88,7 +88,10 @@ function pollExtractProgress(jobId) {
         const job = await res.json();
 
         if (job.status === "processing") {
-          setProgress(job.percent, `Extraction en cours... ${job.percent.toFixed(0)}%`);
+          const label = job.percent >= 100
+            ? "Enregistrement des métadonnées..."
+            : `Extraction en cours... ${job.percent.toFixed(0)}%`;
+          setProgress(job.percent, label);
         } else if (job.status === "done") {
           clearInterval(interval);
           setProgress(100, "Extraction terminée.");
@@ -101,7 +104,7 @@ function pollExtractProgress(jobId) {
         clearInterval(interval);
         reject(e);
       }
-    }, 600);
+    }, 300);
   });
 }
 
