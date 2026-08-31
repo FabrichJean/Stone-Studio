@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "tools" / "extract_audio"))
 sys.path.insert(0, str(ROOT / "tools" / "trim_media"))
 sys.path.insert(0, str(ROOT / "tools" / "speed_media"))
 sys.path.insert(0, str(ROOT / "tools" / "orientation"))
+sys.path.insert(0, str(ROOT / "tools" / "screen_record"))
 from extract_audio import FORMATS, extract_audio  # noqa: E402
 from media_utils import generate_thumbnail, probe_media  # noqa: E402
 from orientation import (  # noqa: E402
@@ -27,6 +28,10 @@ from orientation import (  # noqa: E402
     ASPECT_RATIOS,
     change_orientation,
     orient_segments,
+)
+from screen_record import (  # noqa: E402
+    FORMATS as RECORD_FORMATS,
+    finalize_recording,
 )
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
@@ -75,6 +80,7 @@ TOOL_LABELS = {
     "trim_media": "Trim media",
     "speed_media": "Speed",
     "orientation": "Orientation",
+    "screen_record": "Enregistrement écran",
 }
 
 
@@ -138,6 +144,11 @@ def speed_page(request: Request):
 @app.get("/orientation")
 def orientation_page(request: Request):
     return templates.TemplateResponse(request, "orientation.html", {"active_tool": "orientation"})
+
+
+@app.get("/record")
+def record_page(request: Request):
+    return templates.TemplateResponse(request, "record.html", {"active_tool": "screen_record"})
 
 
 @app.get("/projects")
@@ -414,5 +425,40 @@ async def api_orientation(
     stem = Path(video.filename).stem
     output_name = f"{stem}_orientation{suffix}"
     save_project("orientation", video.filename, "output", output_file, output_name)
+
+    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+
+
+@app.post("/api/screen-record")
+async def api_screen_record(
+    recording: UploadFile = File(...),
+    format: str = Form("mp4"),
+    name: str | None = Form(None),
+):
+    if format not in RECORD_FORMATS:
+        raise HTTPException(400, f"Format non supporté : {format}")
+
+    job_id = uuid.uuid4().hex
+    raw_suffix = Path(recording.filename or "capture.webm").suffix or ".webm"
+    raw_file = f"{job_id}_capture{raw_suffix}"
+    raw_path = UPLOADS_DIR / raw_file
+    output_file = f"{job_id}{RECORD_FORMATS[format]['suffix']}"
+    output_path = OUTPUT_DIR / output_file
+
+    with raw_path.open("wb") as f:
+        shutil.copyfileobj(recording.file, f)
+
+    if raw_path.stat().st_size == 0:
+        raw_path.unlink()
+        raise HTTPException(400, "L'enregistrement reçu est vide.")
+
+    try:
+        finalize_recording(raw_path, output_path, format)
+    except RuntimeError as e:
+        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+
+    stem = Path(name).stem if name else f"enregistrement_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    output_name = f"{stem}{RECORD_FORMATS[format]['suffix']}"
+    save_project("screen_record", None, "output", output_file, output_name)
 
     return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
