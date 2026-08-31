@@ -1,6 +1,9 @@
 const setupPanel = document.getElementById("setupPanel");
+const selectHint = document.getElementById("selectHint");
 const captureStage = document.getElementById("captureStage");
 const livePreview = document.getElementById("livePreview");
+const cropOverlay = document.getElementById("cropOverlay");
+const cropBox = document.getElementById("cropBox");
 const resultStage = document.getElementById("resultStage");
 const resultPreview = document.getElementById("resultPreview");
 const recBadge = document.getElementById("recBadge");
@@ -9,6 +12,9 @@ const timerRow = document.getElementById("timerRow");
 const timer = document.getElementById("timer");
 const sizeLabel = document.getElementById("sizeLabel");
 const startBtn = document.getElementById("startBtn");
+const resetCropBtn = document.getElementById("resetCropBtn");
+const cancelSelectBtn = document.getElementById("cancelSelectBtn");
+const confirmStartBtn = document.getElementById("confirmStartBtn");
 const pauseBtn = document.getElementById("pauseBtn");
 const stopBtn = document.getElementById("stopBtn");
 const restartBtn = document.getElementById("restartBtn");
@@ -16,9 +22,24 @@ const retryBtn = document.getElementById("retryBtn");
 const status = document.getElementById("status");
 const info = document.getElementById("info");
 
-let captureStream = null; // flux écran (+ son système)
+const MIN_SELECT = 0.04; // taille minimale (fraction) de la zone dessinée
+
+let captureStream = null; // flux écran (+ son système), brut de getDisplayMedia
 let micStream = null;
 let audioContext = null;
+let pendingStream = null; // flux combiné (vidéo + audio mixé) en attente de confirmation
+let pendingVideoTrack = null;
+let pendingFps = 30;
+
+let selectRect = null; // { x, y, w, h } en fractions (0..1) de l'aperçu, ou null = écran entier
+let dragMode = null; // "draw" | "move" | "resize" | null
+let dragHandle = null; // "nw" | "ne" | "sw" | "se"
+let dragStart = null;
+let dragRectStart = null;
+
+let cropCanvas = null;
+let cropRafHandle = null;
+
 let recorder = null;
 let chunks = [];
 let recordedBlob = null;
@@ -131,6 +152,8 @@ function releaseStreams() {
   if (micStream) micStream.getTracks().forEach((t) => t.stop());
   if (audioContext) audioContext.close();
   captureStream = micStream = audioContext = null;
+  pendingStream = pendingVideoTrack = null;
+  stopCropLoop();
 }
 
 function startTicker() {
@@ -146,6 +169,183 @@ function startTicker() {
 function stopTicker() {
   if (tickHandle) clearInterval(tickHandle);
   tickHandle = null;
+}
+
+/* ---------- Sélection de la zone à capturer ---------- */
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function pointToFraction(clientX, clientY) {
+  const rect = livePreview.getBoundingClientRect();
+  return {
+    x: clamp01((clientX - rect.left) / rect.width),
+    y: clamp01((clientY - rect.top) / rect.height),
+  };
+}
+
+function resizeRect(start, handle, cur) {
+  let left = start.x;
+  let top = start.y;
+  let right = start.x + start.w;
+  let bottom = start.y + start.h;
+
+  if (handle.includes("w")) left = Math.min(cur.x, right - MIN_SELECT);
+  if (handle.includes("e")) right = Math.max(cur.x, left + MIN_SELECT);
+  if (handle.includes("n")) top = Math.min(cur.y, bottom - MIN_SELECT);
+  if (handle.includes("s")) bottom = Math.max(cur.y, top + MIN_SELECT);
+
+  return {
+    x: clamp01(left),
+    y: clamp01(top),
+    w: clamp01(right) - clamp01(left),
+    h: clamp01(bottom) - clamp01(top),
+  };
+}
+
+function updateCropBox() {
+  if (!selectRect) {
+    cropBox.hidden = true;
+    return;
+  }
+  const w = livePreview.clientWidth;
+  const h = livePreview.clientHeight;
+  cropBox.hidden = false;
+  cropBox.style.left = `${selectRect.x * w}px`;
+  cropBox.style.top = `${selectRect.y * h}px`;
+  cropBox.style.width = `${selectRect.w * w}px`;
+  cropBox.style.height = `${selectRect.h * h}px`;
+}
+
+function enterSelectionMode() {
+  selectRect = null;
+  cropOverlay.hidden = false;
+  cropOverlay.classList.add("drawable");
+  cropBox.classList.add("resizable");
+  cropBox.hidden = true;
+  selectHint.hidden = false;
+}
+
+function exitSelectionMode() {
+  cropOverlay.hidden = true;
+  cropOverlay.classList.remove("drawable");
+  cropBox.classList.remove("resizable");
+  selectHint.hidden = true;
+}
+
+cropBox.addEventListener("pointerdown", (e) => {
+  if (e.target.classList.contains("crop-handle") || !selectRect) return;
+  e.preventDefault();
+  dragMode = "move";
+  dragStart = pointToFraction(e.clientX, e.clientY);
+  dragRectStart = { ...selectRect };
+});
+
+cropBox.querySelectorAll(".crop-handle").forEach((handle) => {
+  handle.addEventListener("pointerdown", (e) => {
+    if (!selectRect) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragMode = "resize";
+    dragHandle = handle.dataset.handle;
+    dragStart = pointToFraction(e.clientX, e.clientY);
+    dragRectStart = { ...selectRect };
+  });
+});
+
+cropOverlay.addEventListener("pointerdown", (e) => {
+  if (!cropOverlay.classList.contains("drawable") || e.target !== cropOverlay) return;
+  e.preventDefault();
+  dragMode = "draw";
+  dragStart = pointToFraction(e.clientX, e.clientY);
+  selectRect = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+  updateCropBox();
+});
+
+window.addEventListener("pointermove", (e) => {
+  if (!dragMode) return;
+  const cur = pointToFraction(e.clientX, e.clientY);
+
+  if (dragMode === "draw") {
+    selectRect = {
+      x: Math.min(dragStart.x, cur.x),
+      y: Math.min(dragStart.y, cur.y),
+      w: Math.abs(cur.x - dragStart.x),
+      h: Math.abs(cur.y - dragStart.y),
+    };
+  } else if (dragMode === "move") {
+    const dx = cur.x - dragStart.x;
+    const dy = cur.y - dragStart.y;
+    selectRect = {
+      x: Math.max(0, Math.min(1 - dragRectStart.w, dragRectStart.x + dx)),
+      y: Math.max(0, Math.min(1 - dragRectStart.h, dragRectStart.y + dy)),
+      w: dragRectStart.w,
+      h: dragRectStart.h,
+    };
+  } else if (dragMode === "resize") {
+    selectRect = resizeRect(dragRectStart, dragHandle, cur);
+  }
+
+  updateCropBox();
+});
+
+window.addEventListener("pointerup", () => {
+  if (dragMode === "draw" && selectRect && (selectRect.w < MIN_SELECT || selectRect.h < MIN_SELECT)) {
+    selectRect = null; // clic sans glisser : annule le dessin, garde l'écran entier
+  }
+  dragMode = null;
+  dragHandle = null;
+  updateCropBox();
+});
+
+window.addEventListener("resize", () => {
+  if (!cropOverlay.hidden) updateCropBox();
+});
+
+resetCropBtn.addEventListener("click", () => {
+  selectRect = null;
+  updateCropBox();
+});
+
+/* ---------- Recadrage par canvas ---------- */
+
+function stopCropLoop() {
+  if (cropRafHandle) cancelAnimationFrame(cropRafHandle);
+  cropRafHandle = null;
+  cropCanvas = null;
+}
+
+/** Découpe le flux à la zone choisie en redessinant chaque image sur un canvas
+ *  (getDisplayMedia ne permet pas de restreindre nativement la capture à une
+ *  sous-région de l'écran/fenêtre/onglet). */
+function buildCroppedStream(stream, videoTrack, fps, rect) {
+  const settings = videoTrack.getSettings();
+  const vw = settings.width || livePreview.videoWidth;
+  const vh = settings.height || livePreview.videoHeight;
+
+  const sx = Math.round(rect.x * vw);
+  const sy = Math.round(rect.y * vh);
+  // Largeur/hauteur paires : les encodeurs H.264 exigent des dimensions multiples de 2.
+  const sw = Math.max(2, Math.round(rect.w * vw / 2) * 2);
+  const sh = Math.max(2, Math.round(rect.h * vh / 2) * 2);
+
+  cropCanvas = document.createElement("canvas");
+  cropCanvas.width = sw;
+  cropCanvas.height = sh;
+  const ctx = cropCanvas.getContext("2d", { alpha: false });
+
+  const draw = () => {
+    if (livePreview.readyState >= 2) {
+      ctx.drawImage(livePreview, sx, sy, sw, sh, 0, 0, sw, sh);
+    }
+    cropRafHandle = requestAnimationFrame(draw);
+  };
+  cropRafHandle = requestAnimationFrame(draw);
+
+  const canvasStream = cropCanvas.captureStream(fps);
+  stream.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
+  return canvasStream;
 }
 
 /* ---------- Actions ---------- */
@@ -164,17 +364,63 @@ startBtn.addEventListener("click", async () => {
     return;
   }
 
-  const { stream, videoTrack, fps } = built;
-  const settings = videoTrack.getSettings();
+  pendingStream = built.stream;
+  pendingVideoTrack = built.videoTrack;
+  pendingFps = built.fps;
+
+  // Si le partage est arrêté depuis la barre du navigateur pendant la sélection.
+  pendingVideoTrack.addEventListener("ended", cancelSelection, { once: true });
+
+  livePreview.srcObject = pendingStream;
+
+  setupPanel.hidden = true;
+  resultStage.hidden = true;
+  retryBtn.hidden = true;
+  restartBtn.hidden = true;
+  info.innerHTML = "";
+  captureStage.hidden = false;
+  startBtn.hidden = true;
+  resetCropBtn.hidden = false;
+  cancelSelectBtn.hidden = false;
+  confirmStartBtn.hidden = false;
+
+  enterSelectionMode();
+  setStatus("Choisissez la zone à enregistrer, puis démarrez.");
+});
+
+function cancelSelection() {
+  releaseStreams();
+  livePreview.srcObject = null;
+  exitSelectionMode();
+
+  captureStage.hidden = true;
+  resetCropBtn.hidden = true;
+  cancelSelectBtn.hidden = true;
+  confirmStartBtn.hidden = true;
+  setupPanel.hidden = false;
+  startBtn.hidden = false;
+  startBtn.disabled = false;
+  setStatus("");
+}
+
+cancelSelectBtn.addEventListener("click", cancelSelection);
+
+confirmStartBtn.addEventListener("click", () => {
+  const rect = selectRect && selectRect.w >= MIN_SELECT && selectRect.h >= MIN_SELECT ? selectRect : null;
+  const finalStream = rect
+    ? buildCroppedStream(pendingStream, pendingVideoTrack, pendingFps, rect)
+    : pendingStream;
 
   chunks = [];
   recordedBytes = 0;
   recordedBlob = null;
   const mimeType = pickMimeType();
+  const settings = pendingVideoTrack.getSettings();
 
-  recorder = new MediaRecorder(stream, {
+  const outputHeight = rect ? cropCanvas.height : settings.height || 720;
+  recorder = new MediaRecorder(finalStream, {
     ...(mimeType ? { mimeType } : {}),
-    videoBitsPerSecond: videoBitrate(settings.height || 720, fps),
+    videoBitsPerSecond: videoBitrate(outputHeight, pendingFps),
   });
 
   recorder.ondataavailable = (e) => {
@@ -187,9 +433,9 @@ startBtn.addEventListener("click", async () => {
   recorder.onstop = () => finishRecording(mimeType);
 
   // L'utilisateur peut arrêter le partage depuis la barre du navigateur.
-  videoTrack.addEventListener("ended", stopRecording);
+  pendingVideoTrack.removeEventListener("ended", cancelSelection);
+  pendingVideoTrack.addEventListener("ended", stopRecording);
 
-  livePreview.srcObject = stream;
   recorder.start(1000);
 
   startedAt = Date.now();
@@ -198,17 +444,14 @@ startBtn.addEventListener("click", async () => {
   timer.textContent = "00:00";
   sizeLabel.textContent = "0.0 MB";
 
-  setupPanel.hidden = true;
-  resultStage.hidden = true;
-  retryBtn.hidden = true;
-  restartBtn.hidden = true;
-  info.innerHTML = "";
-  captureStage.hidden = false;
+  exitSelectionMode();
+  resetCropBtn.hidden = true;
+  cancelSelectBtn.hidden = true;
+  confirmStartBtn.hidden = true;
   timerRow.hidden = false;
   recBadge.hidden = false;
   recState.textContent = "REC";
   recBadge.classList.remove("paused");
-  startBtn.hidden = true;
   pauseBtn.hidden = false;
   stopBtn.hidden = false;
   pauseBtn.innerHTML = `${iconHtml("pause")} Pause`;
