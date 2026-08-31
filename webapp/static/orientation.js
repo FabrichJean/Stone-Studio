@@ -19,6 +19,11 @@ const segmentsPanel = document.getElementById("segmentsPanel");
 const globalActionsEl = document.getElementById("globalActions");
 const segmentActionsEl = document.getElementById("segmentActions");
 const applyBtn = document.getElementById("applyBtn");
+const progressWrap = document.getElementById("progressWrap");
+const progressFill = document.getElementById("progressFill");
+const progressLabel = document.getElementById("progressLabel");
+const downloadBtn = document.getElementById("downloadBtn");
+const sendToWrap = document.getElementById("sendToWrap");
 
 const track = document.getElementById("trimTrack");
 const range = document.getElementById("trimRange");
@@ -286,6 +291,7 @@ aspectGrid.querySelectorAll(".orientation-btn").forEach((btn) => {
 });
 
 let selectedFile = null;
+let pendingDownload = null;
 let mediaDuration = 0;
 let startTime = 0;
 let endTime = 0;
@@ -354,7 +360,10 @@ function handleFile(file) {
   selectedFile = file;
   status.textContent = "";
   status.className = "status";
-  document.getElementById("sendToWrap").hidden = true;
+  progressWrap.hidden = true;
+  downloadBtn.hidden = true;
+  sendToWrap.hidden = true;
+  pendingDownload = null;
   globalActions = [];
   currentSegmentActions = [];
   segments = [];
@@ -628,12 +637,51 @@ addSegmentBtn.addEventListener("click", () => {
 
 /* ---------- Application ---------- */
 
+function setOrientationProgress(percent, label) {
+  progressWrap.hidden = false;
+  progressFill.style.width = `${percent}%`;
+  progressLabel.textContent = label;
+}
+
+function pollOrientationProgress(jobId) {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/orientation/${jobId}/progress`);
+        if (!res.ok) throw new Error("Tâche introuvable");
+        const job = await res.json();
+
+        if (job.status === "processing") {
+          const label = job.percent >= 100
+            ? "Enregistrement des métadonnées..."
+            : `Traitement en cours... ${job.percent.toFixed(0)}%`;
+          setOrientationProgress(job.percent, label);
+        } else if (job.status === "done") {
+          clearInterval(interval);
+          setOrientationProgress(100, "Traitement terminé.");
+          resolve(job);
+        } else if (job.status === "error") {
+          clearInterval(interval);
+          reject(new Error(job.error || "Erreur inconnue"));
+        }
+      } catch (e) {
+        clearInterval(interval);
+        reject(e);
+      }
+    }, 300);
+  });
+}
+
 applyBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
 
   applyBtn.disabled = true;
+  downloadBtn.hidden = true;
+  sendToWrap.hidden = true;
+  pendingDownload = null;
   status.className = "status";
-  status.textContent = "Traitement en cours...";
+  status.textContent = "";
+  setOrientationProgress(0, "Démarrage du traitement...");
 
   const formData = new FormData();
   formData.append("video", selectedFile);
@@ -664,32 +712,36 @@ applyBtn.addEventListener("click", async () => {
   }
 
   try {
-    const res = await fetch("/api/orientation", { method: "POST", body: formData });
-    if (!res.ok) {
-      const err = await res.json();
+    const startRes = await fetch("/api/orientation", { method: "POST", body: formData });
+    if (!startRes.ok) {
+      const err = await startRes.json();
       throw new Error(err.detail || "Erreur inconnue");
     }
+    const { job_id } = await startRes.json();
 
-    const projectId = res.headers.get("X-Project-Id");
-    const blob = await res.blob();
-    const stem = selectedFile.name.replace(/\.[^/.]+$/, "");
-    const ext = selectedFile.name.split(".").pop();
+    const job = await pollOrientationProgress(job_id);
 
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${stem}_orientation.${ext}`;
-    a.click();
+    pendingDownload = { projectId: job.project_id, name: job.output_name };
+    downloadBtn.hidden = false;
+    renderSendTo("sendToWrap", job.project_id, "orientation");
 
-    if (projectId) renderSendTo("sendToWrap", projectId, "orientation");
-
-    status.textContent = "Orientation modifiée avec succès.";
+    status.textContent = `Orientation modifiée avec succès (${formatBytesCommon(job.output_size)}).`;
     status.className = "status success";
   } catch (e) {
     status.textContent = `Erreur : ${e.message}`;
     status.className = "status error";
+    progressWrap.hidden = true;
   } finally {
     updateApplyState();
   }
+});
+
+downloadBtn.addEventListener("click", () => {
+  if (!pendingDownload) return;
+  const a = document.createElement("a");
+  a.href = `/api/projects/${pendingDownload.projectId}/download`;
+  a.download = pendingDownload.name;
+  a.click();
 });
 
 autoLoadFromUrl(handleFile);
