@@ -354,6 +354,7 @@ function handleFile(file) {
   selectedFile = file;
   status.textContent = "";
   status.className = "status";
+  document.getElementById("sendToWrap").hidden = true;
   globalActions = [];
   currentSegmentActions = [];
   segments = [];
@@ -669,6 +670,7 @@ applyBtn.addEventListener("click", async () => {
       throw new Error(err.detail || "Erreur inconnue");
     }
 
+    const projectId = res.headers.get("X-Project-Id");
     const blob = await res.blob();
     const stem = selectedFile.name.replace(/\.[^/.]+$/, "");
     const ext = selectedFile.name.split(".").pop();
@@ -677,6 +679,8 @@ applyBtn.addEventListener("click", async () => {
     a.href = URL.createObjectURL(blob);
     a.download = `${stem}_orientation.${ext}`;
     a.click();
+
+    if (projectId) renderSendTo("sendToWrap", projectId, "orientation");
 
     status.textContent = "Orientation modifiée avec succès.";
     status.className = "status success";
@@ -687,3 +691,5 @@ applyBtn.addEventListener("click", async () => {
     updateApplyState();
   }
 });
+
+autoLoadFromUrl(handleFile);
