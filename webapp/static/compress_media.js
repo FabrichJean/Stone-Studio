@@ -11,8 +11,10 @@ const maxSizeMb = document.getElementById("maxSizeMb");
 const progressWrap = document.getElementById("progressWrap");
 const progressFill = document.getElementById("progressFill");
 const progressLabel = document.getElementById("progressLabel");
+const downloadBtn = document.getElementById("downloadBtn");
 
 let selectedFile = null;
+let pendingDownload = null;
 
 limitSize.addEventListener("change", () => {
   maxSizeMb.disabled = !limitSize.checked;
@@ -47,6 +49,9 @@ function handleFile(file) {
   applyBtn.disabled = false;
   status.textContent = "";
   status.className = "status";
+  progressWrap.hidden = true;
+  downloadBtn.hidden = true;
+  pendingDownload = null;
 
   const url = URL.createObjectURL(file);
   preview.src = url;
@@ -104,6 +109,8 @@ applyBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
 
   applyBtn.disabled = true;
+  downloadBtn.hidden = true;
+  pendingDownload = null;
   status.className = "status";
   status.textContent = "";
   setProgress(0, "Démarrage de la compression...");
@@ -130,11 +137,8 @@ applyBtn.addEventListener("click", async () => {
     if (!dlRes.ok) throw new Error("Téléchargement impossible");
     const blob = await dlRes.blob();
 
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = job.output_name;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    pendingDownload = { blob, name: job.output_name };
+    downloadBtn.hidden = false;
 
     const ratio = Math.round((1 - job.output_size / selectedFile.size) * 100);
     const change = ratio >= 0 ? `réduite de ${ratio}%` : `augmentée de ${-ratio}%`;
@@ -147,4 +151,13 @@ applyBtn.addEventListener("click", async () => {
   } finally {
     applyBtn.disabled = false;
   }
+});
+
+downloadBtn.addEventListener("click", () => {
+  if (!pendingDownload) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(pendingDownload.blob);
+  a.download = pendingDownload.name;
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
