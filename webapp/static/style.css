@@ -41,12 +41,13 @@ h1, h2, h3, .serif {
 
 .layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
 }
 
 /* Sidebar */
 .sidebar {
   width: 260px;
+  height: 100vh;
   background: var(--sidebar-bg);
   color: var(--sidebar-text);
   padding: 24px 16px;
@@ -54,6 +55,7 @@ h1, h2, h3, .serif {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--sidebar-border);
+  overflow-y: auto;
 }
 
 .brand {
@@ -161,6 +163,8 @@ h1, h2, h3, .serif {
 /* Content */
 .content {
   flex: 1;
+  height: 100vh;
+  overflow-y: auto;
   padding: 32px 40px;
 }
 
