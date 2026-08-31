@@ -54,6 +54,7 @@ DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 # Suivi en mémoire des tâches en cours (mono-process : suffisant pour cet usage local).
 COMPRESS_JOBS: dict[str, dict] = {}
 EXTRACT_JOBS: dict[str, dict] = {}
+TRIM_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -269,6 +270,30 @@ def extract_progress(job_id: str):
     return job
 
 
+def _run_trim_job(
+    job_id: str, media_path: Path, output_path: Path, filename: str, pairs: list[tuple[str, str]]
+) -> None:
+    def on_progress(frac: float) -> None:
+        TRIM_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    try:
+        combine_segments(media_path, pairs, output_path, on_progress)
+    except RuntimeError as e:
+        TRIM_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    stem = Path(filename).stem
+    suffix_label = "trim" if len(pairs) == 1 else "combined"
+    output_name = f"{stem}_{suffix_label}{output_path.suffix}"
+    save_project("trim_media", filename, "output", output_path.name, output_name)
+    TRIM_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": Path(output_path.name).stem,
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+    }
+
+
 @app.post("/api/trim-media")
 async def api_trim_media(
     media: UploadFile = File(...),
@@ -300,17 +325,23 @@ async def api_trim_media(
         shutil.copyfileobj(media.file, f)
     save_project("upload", None, "uploads", media_file, media.filename)
 
-    try:
-        combine_segments(media_path, pairs, output_path)
-    except RuntimeError as e:
-        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+    TRIM_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_trim_job,
+        args=(job_id, media_path, output_path, media.filename, pairs),
+        daemon=True,
+    )
+    thread.start()
 
-    stem = Path(media.filename).stem
-    suffix_label = "trim" if len(pairs) == 1 else "combined"
-    output_name = f"{stem}_{suffix_label}{suffix}"
-    save_project("trim_media", media.filename, "output", output_file, output_name)
+    return {"job_id": job_id}
 
-    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+
+@app.get("/api/trim-media/{job_id}/progress")
+def trim_progress(job_id: str):
+    job = TRIM_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
 
 
 @app.post("/api/speed-media")
