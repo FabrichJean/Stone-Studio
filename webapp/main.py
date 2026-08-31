@@ -55,6 +55,7 @@ DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 COMPRESS_JOBS: dict[str, dict] = {}
 EXTRACT_JOBS: dict[str, dict] = {}
 TRIM_JOBS: dict[str, dict] = {}
+RECORD_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -526,11 +527,35 @@ async def api_orientation(
     )
 
 
+def _run_record_job(
+    job_id: str, raw_path: Path, output_path: Path, format: str, name: str | None, duration: float | None
+) -> None:
+    def on_progress(frac: float) -> None:
+        RECORD_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    try:
+        finalize_recording(raw_path, output_path, format, on_progress, known_duration=duration)
+    except RuntimeError as e:
+        RECORD_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    stem = Path(name).stem if name else f"enregistrement_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    output_name = f"{stem}{RECORD_FORMATS[format]['suffix']}"
+    save_project("screen_record", None, "output", output_path.name, output_name)
+    RECORD_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": Path(output_path.name).stem,
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+    }
+
+
 @app.post("/api/screen-record")
 async def api_screen_record(
     recording: UploadFile = File(...),
     format: str = Form("mp4"),
     name: str | None = Form(None),
+    duration: float | None = Form(None),
 ):
     if format not in RECORD_FORMATS:
         raise HTTPException(400, f"Format non supporté : {format}")
@@ -549,18 +574,23 @@ async def api_screen_record(
         raw_path.unlink()
         raise HTTPException(400, "L'enregistrement reçu est vide.")
 
-    try:
-        finalize_recording(raw_path, output_path, format)
-    except RuntimeError as e:
-        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+    RECORD_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_record_job,
+        args=(job_id, raw_path, output_path, format, name, duration),
+        daemon=True,
+    )
+    thread.start()
 
-    stem = Path(name).stem if name else f"enregistrement_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    output_name = f"{stem}{RECORD_FORMATS[format]['suffix']}"
-    save_project("screen_record", None, "output", output_file, output_name)
+    return {"job_id": job_id}
 
-    # Le navigateur possède déjà la capture : renvoyer le fichier finalisé doublerait
-    # inutilement le transfert. On ne retourne que la fiche du projet créé.
-    return {"id": Path(output_file).stem, "output_name": output_name, "size": output_path.stat().st_size}
+
+@app.get("/api/screen-record/{job_id}/progress")
+def record_progress(job_id: str):
+    job = RECORD_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
 
 
 @app.post("/api/noise-removal")

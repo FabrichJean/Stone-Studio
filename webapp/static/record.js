@@ -19,6 +19,10 @@ const pauseBtn = document.getElementById("pauseBtn");
 const stopBtn = document.getElementById("stopBtn");
 const restartBtn = document.getElementById("restartBtn");
 const downloadBtn = document.getElementById("downloadBtn");
+const progressWrap = document.getElementById("progressWrap");
+const progressFill = document.getElementById("progressFill");
+const progressLabel = document.getElementById("progressLabel");
+const sendToWrap = document.getElementById("sendToWrap");
 const retryBtn = document.getElementById("retryBtn");
 const status = document.getElementById("status");
 const info = document.getElementById("info");
@@ -45,6 +49,7 @@ let recorder = null;
 let chunks = [];
 let recordedBlob = null;
 let recordedName = "";
+let recordedDurationSeconds = 0;
 let recordedBytes = 0;
 let savedProjectId = null;
 let startedAt = 0;
@@ -380,6 +385,8 @@ startBtn.addEventListener("click", async () => {
   retryBtn.hidden = true;
   restartBtn.hidden = true;
   downloadBtn.hidden = true;
+  progressWrap.hidden = true;
+  sendToWrap.hidden = true;
   savedProjectId = null;
   info.innerHTML = "";
   captureStage.hidden = false;
@@ -496,6 +503,7 @@ stopBtn.addEventListener("click", stopRecording);
 function finishRecording(mimeType) {
   stopTicker();
   const duration = Math.max(0, Date.now() - startedAt - pausedTotal);
+  recordedDurationSeconds = duration / 1000;
   releaseStreams();
   livePreview.srcObject = null;
 
@@ -534,6 +542,8 @@ restartBtn.addEventListener("click", () => {
   timerRow.hidden = true;
   restartBtn.hidden = true;
   downloadBtn.hidden = true;
+  progressWrap.hidden = true;
+  sendToWrap.hidden = true;
   retryBtn.hidden = true;
   info.innerHTML = "";
   setupPanel.hidden = false;
@@ -542,34 +552,76 @@ restartBtn.addEventListener("click", () => {
   setStatus("");
 });
 
+function setRecordProgress(percent, label) {
+  progressWrap.hidden = false;
+  progressFill.style.width = `${percent}%`;
+  progressLabel.textContent = label;
+}
+
+function pollRecordProgress(jobId) {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/screen-record/${jobId}/progress`);
+        if (!res.ok) throw new Error("Tâche introuvable");
+        const job = await res.json();
+
+        if (job.status === "processing") {
+          const label = job.percent >= 100
+            ? "Génération de la miniature et enregistrement..."
+            : `Finalisation en cours... ${job.percent.toFixed(0)}%`;
+          setRecordProgress(job.percent, label);
+        } else if (job.status === "done") {
+          clearInterval(interval);
+          setRecordProgress(100, "Finalisation terminée.");
+          resolve(job);
+        } else if (job.status === "error") {
+          clearInterval(interval);
+          reject(new Error(job.error || "Erreur inconnue"));
+        }
+      } catch (e) {
+        clearInterval(interval);
+        reject(e);
+      }
+    }, 300);
+  });
+}
+
 async function saveRecording() {
   if (!recordedBlob) return;
 
   const format = document.getElementById("format").value;
   retryBtn.hidden = true;
   downloadBtn.hidden = true;
+  sendToWrap.hidden = true;
   restartBtn.disabled = true;
-  setStatus("Finalisation du fichier (conversion ffmpeg)…");
+  setRecordProgress(0, "Démarrage de la finalisation...");
 
   const extension = (recordedBlob.type || "").includes("mp4") ? "mp4" : "webm";
   const formData = new FormData();
   formData.append("recording", recordedBlob, `capture.${extension}`);
   formData.append("format", format);
   formData.append("name", recordedName);
+  if (recordedDurationSeconds > 0) formData.append("duration", recordedDurationSeconds);
 
   try {
-    const res = await fetch("/api/screen-record", { method: "POST", body: formData });
-    if (!res.ok) {
-      const err = await res.json();
+    const startRes = await fetch("/api/screen-record", { method: "POST", body: formData });
+    if (!startRes.ok) {
+      const err = await startRes.json();
       throw new Error(err.detail || "Erreur inconnue");
     }
-    const project = await res.json();
-    savedProjectId = project.id;
+    const { job_id } = await startRes.json();
+
+    const job = await pollRecordProgress(job_id);
+
+    savedProjectId = job.project_id;
     downloadBtn.hidden = false;
     downloadBtn.disabled = false;
-    setStatus(`Enregistrement ajouté à vos projets : ${project.output_name} (${formatBytesCommon(project.size)}).`, "success");
+    renderSendTo("sendToWrap", job.project_id, "screen_record");
+    setStatus(`Enregistrement ajouté à vos projets : ${job.output_name} (${formatBytesCommon(job.output_size)}).`, "success");
   } catch (e) {
     // La capture n'est que dans le navigateur : on garde de quoi retenter.
+    progressWrap.hidden = true;
     setStatus(`Erreur : ${e.message}. L'enregistrement n'est pas encore sauvegardé.`, "error");
     retryBtn.hidden = false;
   } finally {
