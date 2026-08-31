@@ -12,6 +12,7 @@ const ICONS = {
   noise: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h2l2-4v8l2-4h2l2 3v-6l2 3"/></svg>`,
   record: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>`,
   orientation: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg>`,
+  compress: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg>`,
 };
 
 function iconHtml(name, extraClass = "") {
@@ -25,5 +26,15 @@ const TOOL_ICONS = {
   orientation: ICONS.orientation,
   screen_record: ICONS.record,
   noise_removal: ICONS.noise,
+  compress_media: ICONS.compress,
   upload: ICONS.upload,
 };
+
+const TOOL_DESTINATIONS = [
+  { key: "extract_audio", path: "/", label: "Extraction audio", icon: "headphones" },
+  { key: "trim_media", path: "/trim", label: "Trim media", icon: "scissors" },
+  { key: "speed_media", path: "/speed", label: "Speed", icon: "speed" },
+  { key: "orientation", path: "/orientation", label: "Orientation", icon: "orientation" },
+  { key: "compress_media", path: "/compress", label: "Compression vidéo", icon: "compress" },
+  { key: "noise_removal", path: "/noise-removal", label: "Suppression bruit", icon: "noise" },
+];

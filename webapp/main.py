@@ -185,6 +185,14 @@ def api_projects():
     return load_projects()
 
 
+@app.get("/api/projects/{project_id}")
+def get_project(project_id: str):
+    record = next((p for p in load_projects() if p["id"] == project_id), None)
+    if not record:
+        raise HTTPException(404, "Projet introuvable")
+    return record
+
+
 @app.get("/api/projects/{project_id}/download")
 def download_project(project_id: str):
     record = next((p for p in load_projects() if p["id"] == project_id), None)
@@ -396,7 +404,10 @@ async def api_speed_media(
     output_name = f"{stem}_speed{suffix}"
     save_project("speed_media", media.filename, "output", output_file, output_name)
 
-    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+    return FileResponse(
+        output_path, filename=output_name, media_type="application/octet-stream",
+        headers={"X-Project-Id": Path(output_file).stem},
+    )
 
 
 def _validate_crop_rect(rect) -> None:
@@ -509,7 +520,10 @@ async def api_orientation(
     output_name = f"{stem}_orientation{suffix}"
     save_project("orientation", video.filename, "output", output_file, output_name)
 
-    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+    return FileResponse(
+        output_path, filename=output_name, media_type="application/octet-stream",
+        headers={"X-Project-Id": Path(output_file).stem},
+    )
 
 
 @app.post("/api/screen-record")
@@ -578,7 +592,10 @@ async def api_noise_removal(
     output_name = f"{stem}_denoised{suffix}"
     save_project("noise_removal", media.filename, "output", output_file, output_name)
 
-    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+    return FileResponse(
+        output_path, filename=output_name, media_type="application/octet-stream",
+        headers={"X-Project-Id": Path(output_file).stem},
+    )
 
 
 def _run_compress_job(job_id: str, video_path: Path, output_path: Path, filename: str, level: str,

@@ -126,3 +126,48 @@ async function openProjectPicker(onSelect) {
   searchInput.oninput = () => renderPickerList(searchInput.value, onSelect);
   document.getElementById("pickerBack").onclick = () => closeProjectPicker();
 }
+
+/* ---------- Chaînage entre outils : envoyer un résultat vers un autre outil ---------- */
+
+async function loadProjectAsFile(projectId) {
+  const [recordRes, blobRes] = await Promise.all([
+    fetch(`/api/projects/${projectId}`),
+    fetch(`/api/projects/${projectId}/download`),
+  ]);
+  if (!recordRes.ok || !blobRes.ok) throw new Error("Fichier introuvable");
+  const record = await recordRes.json();
+  const blob = await blobRes.blob();
+  return new File([blob], record.output_name, { type: blob.type });
+}
+
+// À appeler au chargement de chaque page d'outil : si l'URL contient ?project=<id>
+// (venant d'un "Envoyer vers"), charge automatiquement ce fichier comme entrée.
+function autoLoadFromUrl(onSelect) {
+  const params = new URLSearchParams(window.location.search);
+  const projectId = params.get("project");
+  if (!projectId) return;
+
+  window.history.replaceState({}, "", window.location.pathname);
+
+  loadProjectAsFile(projectId)
+    .then(onSelect)
+    .catch(() => alert("Impossible de charger le fichier depuis le projet."));
+}
+
+// À appeler une fois un traitement terminé, avec l'id du projet résultat, pour proposer
+// de l'envoyer directement vers un autre outil (sans re-télécharger puis re-uploader).
+function renderSendTo(containerId, projectId, currentToolKey) {
+  const container = document.getElementById(containerId);
+  if (!container || !projectId) return;
+
+  const targets = TOOL_DESTINATIONS.filter((t) => t.key !== currentToolKey);
+  container.innerHTML = `
+    <span class="send-to-label">Envoyer vers</span>
+    <div class="send-to-buttons">
+      ${targets
+        .map((t) => `<a class="send-to-btn" href="${t.path}?project=${projectId}" title="${t.label}">${ICONS[t.icon]}</a>`)
+        .join("")}
+    </div>
+  `;
+  container.hidden = false;
+}
