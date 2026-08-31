@@ -372,6 +372,28 @@ h1, h2, h3, .serif {
   transform: translateX(-50%);
 }
 
+.crop-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+  display: none;
+}
+
+.crop-box.resizable .crop-handle { display: block; }
+
+.crop-handle[data-handle="nw"] { top: 0; left: 0; cursor: nwse-resize; }
+.crop-handle[data-handle="ne"] { top: 0; left: 100%; cursor: nesw-resize; }
+.crop-handle[data-handle="sw"] { top: 100%; left: 0; cursor: nesw-resize; }
+.crop-handle[data-handle="se"] { top: 100%; left: 100%; cursor: nwse-resize; }
+
+.crop-overlay.drawable { pointer-events: auto; cursor: crosshair; }
+
 .dropzone {
   border: 2px dashed var(--border);
   border-radius: 10px;
