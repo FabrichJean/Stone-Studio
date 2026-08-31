@@ -75,6 +75,7 @@ function handleFile(file) {
   status.className = "status";
   progressWrap.hidden = true;
   downloadBtn.hidden = true;
+  document.getElementById("sendToWrap").hidden = true;
   pendingDownload = null;
   segments = [];
   renderSegments();
@@ -363,6 +364,7 @@ trimBtn.addEventListener("click", async () => {
 
     pendingDownload = { projectId: job.project_id, name: job.output_name };
     downloadBtn.hidden = false;
+    renderSendTo("sendToWrap", job.project_id, "trim_media");
 
     status.textContent = `Export réussi (${formatBytesCommon(job.output_size)}).`;
     status.className = "status success";
@@ -382,3 +384,5 @@ downloadBtn.addEventListener("click", () => {
   a.download = pendingDownload.name;
   a.click();
 });
+
+autoLoadFromUrl(handleFile);
