@@ -21,6 +21,9 @@ sys.path.insert(0, str(ROOT / "tools" / "trim_media"))
 sys.path.insert(0, str(ROOT / "tools" / "speed_media"))
 sys.path.insert(0, str(ROOT / "tools" / "orientation"))
 sys.path.insert(0, str(ROOT / "tools" / "screen_record"))
+sys.path.insert(0, str(ROOT / "tools" / "noise_removal"))
+sys.path.insert(0, str(ROOT / "tools" / "compress_media"))
+from compress_media import LEVELS as COMPRESS_LEVELS, RESOLUTIONS, compress_video  # noqa: E402
 from extract_audio import FORMATS, extract_audio  # noqa: E402
 from media_utils import generate_thumbnail, probe_media  # noqa: E402
 from orientation import (  # noqa: E402
@@ -33,6 +36,7 @@ from screen_record import (  # noqa: E402
     FORMATS as RECORD_FORMATS,
     finalize_recording,
 )
+from noise_removal import LEVELS as NOISE_LEVELS, remove_noise  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
 
@@ -81,6 +85,8 @@ TOOL_LABELS = {
     "speed_media": "Speed",
     "orientation": "Orientation",
     "screen_record": "Enregistrement écran",
+    "noise_removal": "Suppression bruit",
+    "compress_media": "Compression vidéo",
 }
 
 
@@ -144,6 +150,16 @@ def speed_page(request: Request):
 @app.get("/orientation")
 def orientation_page(request: Request):
     return templates.TemplateResponse(request, "orientation.html", {"active_tool": "orientation"})
+
+
+@app.get("/noise-removal")
+def noise_removal_page(request: Request):
+    return templates.TemplateResponse(request, "noise_removal.html", {"active_tool": "noise_removal"})
+
+
+@app.get("/compress")
+def compress_page(request: Request):
+    return templates.TemplateResponse(request, "compress_media.html", {"active_tool": "compress_media"})
 
 
 @app.get("/record")
@@ -464,3 +480,68 @@ async def api_screen_record(
     # Le navigateur possède déjà la capture : renvoyer le fichier finalisé doublerait
     # inutilement le transfert. On ne retourne que la fiche du projet créé.
     return {"id": Path(output_file).stem, "output_name": output_name, "size": output_path.stat().st_size}
+
+
+@app.post("/api/noise-removal")
+async def api_noise_removal(
+    media: UploadFile = File(...),
+    level: str = Form("medium"),
+    reduce_hum: bool = Form(False),
+):
+    if level not in NOISE_LEVELS:
+        raise HTTPException(400, f"Niveau non supporté : {level}")
+
+    job_id = uuid.uuid4().hex
+    suffix = Path(media.filename).suffix
+    media_file = f"{job_id}_{media.filename}"
+    media_path = UPLOADS_DIR / media_file
+    output_file = f"{job_id}{suffix}"
+    output_path = OUTPUT_DIR / output_file
+
+    with media_path.open("wb") as f:
+        shutil.copyfileobj(media.file, f)
+    save_project("upload", None, "uploads", media_file, media.filename)
+
+    try:
+        remove_noise(media_path, output_path, level, reduce_hum)
+    except RuntimeError as e:
+        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+
+    stem = Path(media.filename).stem
+    output_name = f"{stem}_denoised{suffix}"
+    save_project("noise_removal", media.filename, "output", output_file, output_name)
+
+    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+
+
+@app.post("/api/compress-media")
+async def api_compress_media(
+    video: UploadFile = File(...),
+    level: str = Form("medium"),
+    resolution: str = Form("original"),
+):
+    if level not in COMPRESS_LEVELS:
+        raise HTTPException(400, f"Niveau non supporté : {level}")
+    if resolution not in RESOLUTIONS:
+        raise HTTPException(400, f"Résolution non supportée : {resolution}")
+
+    job_id = uuid.uuid4().hex
+    video_file = f"{job_id}_{video.filename}"
+    video_path = UPLOADS_DIR / video_file
+    output_file = f"{job_id}.mp4"
+    output_path = OUTPUT_DIR / output_file
+
+    with video_path.open("wb") as f:
+        shutil.copyfileobj(video.file, f)
+    save_project("upload", None, "uploads", video_file, video.filename)
+
+    try:
+        compress_video(video_path, output_path, level, resolution)
+    except RuntimeError as e:
+        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+
+    stem = Path(video.filename).stem
+    output_name = f"{stem}_compressed.mp4"
+    save_project("compress_media", video.filename, "output", output_file, output_name)
+
+    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
