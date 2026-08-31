@@ -8,10 +8,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 TIME_RE = re.compile(r"^(\d{1,2}:)?(\d{1,2}:)?\d{1,2}(\.\d+)?$")
+OUT_TIME_RE = re.compile(r"^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$")
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 AUDIO_CODECS = {".mp3": "libmp3lame", ".wav": "pcm_s16le", ".flac": "flac", ".aac": "aac", ".m4a": "aac"}
+
+ProgressCallback = Callable[[float], None]
 
 
 def is_valid_time(value: str) -> bool:
@@ -24,6 +28,57 @@ def time_to_seconds(value: str) -> float:
         parts.insert(0, 0.0)
     h, m, s = parts
     return h * 3600 + m * 60 + s
+
+
+def probe_duration(path: Path) -> float | None:
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return float(result.stdout.strip())
+    except ValueError:
+        return None
+
+
+def _parse_out_time(value: str) -> float | None:
+    match = OUT_TIME_RE.match(value)
+    if not match:
+        return None
+    h, m, s = match.groups()
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def _run_ffmpeg_progress(
+    cmd: list[str], seg_duration: float | None, on_progress: ProgressCallback | None, start: float, end: float
+) -> None:
+    """Exécute ffmpeg en suivant sa progression via -progress pipe:1, et rapporte une
+    fraction globale [start, end] (permet de composer plusieurs segments en un seul suivi).
+
+    `seg_duration` doit être la durée de SORTIE attendue (out_time suit la timeline
+    post-filtre) : à vitesse x2, elle vaut la moitié de la durée du segment source.
+    """
+    full_cmd = cmd + ["-progress", "pipe:1", "-nostats"]
+    proc = subprocess.Popen(full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line.startswith("out_time="):
+            continue
+        elapsed = _parse_out_time(line.split("=", 1)[1])
+        if elapsed is not None and seg_duration and on_progress:
+            frac = max(0.0, min(elapsed / seg_duration, 1.0))
+            on_progress(start + frac * (end - start))
+
+    stderr = proc.stderr.read() if proc.stderr else ""
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(stderr.strip())
+
+    if on_progress:
+        on_progress(end)
 
 
 def atempo_chain(factor: float) -> str:
@@ -49,6 +104,8 @@ def change_speed(
     factor: float,
     start: str | None = None,
     end: str | None = None,
+    on_progress: ProgressCallback | None = None,
+    progress_range: tuple[float, float] = (0.0, 1.0),
 ) -> None:
     ext = input_path.suffix.lower()
     has_video = ext in VIDEO_EXTS
@@ -78,23 +135,44 @@ def change_speed(
 
     cmd.append(str(output_path))
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip())
+    # -progress rapporte out_time sur la timeline de SORTIE (après le filtre de vitesse) :
+    # on divise donc la durée source par le facteur pour obtenir la durée attendue.
+    if on_progress:
+        if start and end:
+            raw_duration = time_to_seconds(end) - time_to_seconds(start)
+        else:
+            raw_duration = probe_duration(input_path)
+        seg_duration = (raw_duration / factor) if raw_duration else None
+    else:
+        seg_duration = None
+
+    _run_ffmpeg_progress(cmd, seg_duration, on_progress, *progress_range)
 
 
-def speed_segments(input_path: Path, segments: list[dict], output_path: Path) -> None:
+def speed_segments(
+    input_path: Path, segments: list[dict], output_path: Path, on_progress: ProgressCallback | None = None
+) -> None:
     """segments: [{"start": str, "end": str, "factor": float}, ...] — vitesse propre à chaque morceau."""
     if not segments:
         raise ValueError("Aucun segment fourni.")
 
+    durations = [max(time_to_seconds(s["end"]) - time_to_seconds(s["start"]), 0.01) for s in segments]
+    total = sum(durations)
+    trim_budget = 0.95 if on_progress else 1.0
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         part_paths = []
+        cursor = 0.0
 
-        for i, seg in enumerate(segments):
+        for i, (seg, dur) in enumerate(zip(segments, durations)):
             part_path = tmp_dir / f"part_{i}{input_path.suffix}"
-            change_speed(input_path, part_path, seg["factor"], seg["start"], seg["end"])
+            span = (dur / total) * trim_budget
+            change_speed(
+                input_path, part_path, seg["factor"], seg["start"], seg["end"],
+                on_progress=on_progress, progress_range=(cursor, cursor + span),
+            )
+            cursor += span
             part_paths.append(part_path)
 
         concat_list = tmp_dir / "concat.txt"
@@ -107,6 +185,9 @@ def speed_segments(input_path: Path, segments: list[dict], output_path: Path) ->
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip())
+
+        if on_progress:
+            on_progress(1.0)
 
 
 def main() -> None:
@@ -125,6 +206,12 @@ def main() -> None:
     if not args.media.exists():
         sys.exit(f"Erreur : le fichier '{args.media}' n'existe pas.")
 
+    def print_progress(frac: float) -> None:
+        bar_width = 30
+        filled = int(bar_width * frac)
+        bar = "#" * filled + "-" * (bar_width - filled)
+        print(f"\r[{bar}] {frac * 100:5.1f}%", end="", flush=True)
+
     if args.segment:
         segments = []
         for start, end, factor in args.segment:
@@ -134,19 +221,21 @@ def main() -> None:
 
         output_path = args.output or args.media.with_stem(args.media.stem + "_speed")
         try:
-            speed_segments(args.media, segments, output_path)
+            speed_segments(args.media, segments, output_path, print_progress)
         except RuntimeError as e:
+            print()
             sys.exit(f"Erreur ffmpeg : {e}")
-        print(f"Vitesse appliquée par morceaux : {output_path}")
+        print(f"\nVitesse appliquée par morceaux : {output_path}")
         return
 
     output_path = args.output or args.media.with_stem(args.media.stem + "_speed")
     try:
-        change_speed(args.media, output_path, args.factor)
+        change_speed(args.media, output_path, args.factor, on_progress=print_progress)
     except RuntimeError as e:
+        print()
         sys.exit(f"Erreur ffmpeg : {e}")
 
-    print(f"Vitesse modifiée ({args.factor}x) : {output_path}")
+    print(f"\nVitesse modifiée ({args.factor}x) : {output_path}")
 
 
 if __name__ == "__main__":

@@ -57,6 +57,7 @@ EXTRACT_JOBS: dict[str, dict] = {}
 TRIM_JOBS: dict[str, dict] = {}
 RECORD_JOBS: dict[str, dict] = {}
 ORIENTATION_JOBS: dict[str, dict] = {}
+SPEED_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -354,6 +355,33 @@ def trim_progress(job_id: str):
     return job
 
 
+def _run_speed_job(
+    job_id: str, media_path: Path, output_path: Path, filename: str,
+    mode: str, factor: float | None, pairs: list[dict] | None,
+) -> None:
+    def on_progress(frac: float) -> None:
+        SPEED_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    try:
+        if mode == "global":
+            change_speed(media_path, output_path, factor, on_progress=on_progress)
+        else:
+            speed_segments(media_path, pairs, output_path, on_progress)
+    except RuntimeError as e:
+        SPEED_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    stem = Path(filename).stem
+    output_name = f"{stem}_speed{output_path.suffix}"
+    save_project("speed_media", filename, "output", output_path.name, output_name)
+    SPEED_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": Path(output_path.name).stem,
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+    }
+
+
 @app.post("/api/speed-media")
 async def api_speed_media(
     media: UploadFile = File(...),
@@ -363,6 +391,28 @@ async def api_speed_media(
 ):
     if mode not in ("global", "segments"):
         raise HTTPException(400, "Mode invalide (global ou segments).")
+
+    pairs = None
+    if mode == "global":
+        if not factor or factor <= 0:
+            raise HTTPException(400, "Facteur de vitesse invalide.")
+    else:
+        try:
+            seg_list = json.loads(segments or "[]")
+        except json.JSONDecodeError as e:
+            raise HTTPException(400, "Le champ 'segments' doit être un JSON valide.") from e
+
+        if not isinstance(seg_list, list) or not seg_list:
+            raise HTTPException(400, "Au moins un segment est requis.")
+
+        pairs = []
+        for seg in seg_list:
+            start, end, seg_factor = seg.get("start"), seg.get("end"), seg.get("factor")
+            if not is_valid_time(start or "") or not is_valid_time(end or ""):
+                raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
+            if not seg_factor or seg_factor <= 0:
+                raise HTTPException(400, "Facteur de vitesse invalide dans un des segments.")
+            pairs.append({"start": start, "end": end, "factor": float(seg_factor)})
 
     job_id = uuid.uuid4().hex
     suffix = Path(media.filename).suffix
@@ -375,41 +425,23 @@ async def api_speed_media(
         shutil.copyfileobj(media.file, f)
     save_project("upload", None, "uploads", media_file, media.filename)
 
-    try:
-        if mode == "global":
-            if not factor or factor <= 0:
-                raise HTTPException(400, "Facteur de vitesse invalide.")
-            change_speed(media_path, output_path, factor)
-        else:
-            try:
-                seg_list = json.loads(segments or "[]")
-            except json.JSONDecodeError as e:
-                raise HTTPException(400, "Le champ 'segments' doit être un JSON valide.") from e
-
-            if not isinstance(seg_list, list) or not seg_list:
-                raise HTTPException(400, "Au moins un segment est requis.")
-
-            pairs = []
-            for seg in seg_list:
-                start, end, seg_factor = seg.get("start"), seg.get("end"), seg.get("factor")
-                if not is_valid_time(start or "") or not is_valid_time(end or ""):
-                    raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
-                if not seg_factor or seg_factor <= 0:
-                    raise HTTPException(400, "Facteur de vitesse invalide dans un des segments.")
-                pairs.append({"start": start, "end": end, "factor": float(seg_factor)})
-
-            speed_segments(media_path, pairs, output_path)
-    except RuntimeError as e:
-        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
-
-    stem = Path(media.filename).stem
-    output_name = f"{stem}_speed{suffix}"
-    save_project("speed_media", media.filename, "output", output_file, output_name)
-
-    return FileResponse(
-        output_path, filename=output_name, media_type="application/octet-stream",
-        headers={"X-Project-Id": Path(output_file).stem},
+    SPEED_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_speed_job,
+        args=(job_id, media_path, output_path, media.filename, mode, factor, pairs),
+        daemon=True,
     )
+    thread.start()
+
+    return {"job_id": job_id}
+
+
+@app.get("/api/speed-media/{job_id}/progress")
+def speed_progress(job_id: str):
+    job = SPEED_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
 
 
 def _validate_crop_rect(rect) -> None:
