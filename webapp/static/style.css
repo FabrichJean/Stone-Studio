@@ -1047,11 +1047,18 @@ h1, h2, h3, .serif {
 
 .record-stage { position: relative; }
 
-.record-stage #livePreview {
-  width: 100%;
+/* Sans contrainte, une capture d'écran s'affiche à sa résolution native et
+   déborde du panneau : on la ramène à la largeur disponible. */
+.video-stage #livePreview,
+.video-stage #resultPreview {
+  width: auto;
+  max-width: 100%;
   max-height: 420px;
+  object-fit: contain;
   border-radius: 8px;
   background: #000;
+  margin-bottom: 0;
+  display: block;
 }
 
 .rec-badge {
