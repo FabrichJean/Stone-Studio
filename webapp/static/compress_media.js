@@ -51,6 +51,7 @@ function handleFile(file) {
   status.className = "status";
   progressWrap.hidden = true;
   downloadBtn.hidden = true;
+  document.getElementById("sendToWrap").hidden = true;
   pendingDownload = null;
 
   const url = URL.createObjectURL(file);
@@ -135,6 +136,7 @@ applyBtn.addEventListener("click", async () => {
 
     pendingDownload = { projectId: job.project_id, name: job.output_name };
     downloadBtn.hidden = false;
+    renderSendTo("sendToWrap", job.project_id, "compress_media");
 
     const ratio = Math.round((1 - job.output_size / selectedFile.size) * 100);
     const change = ratio >= 0 ? `réduite de ${ratio}%` : `augmentée de ${-ratio}%`;
@@ -156,3 +158,5 @@ downloadBtn.addEventListener("click", () => {
   a.download = pendingDownload.name;
   a.click();
 });
+
+autoLoadFromUrl(handleFile);
