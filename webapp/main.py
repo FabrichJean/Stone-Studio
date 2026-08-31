@@ -4,6 +4,7 @@
 import json
 import shutil
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 THUMBS_DIR.mkdir(exist_ok=True)
 
 DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
+
+# Suivi en mémoire des compressions en cours (mono-process : suffisant pour cet usage local).
+COMPRESS_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -514,16 +518,41 @@ async def api_noise_removal(
     return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
 
 
+def _run_compress_job(job_id: str, video_path: Path, output_path: Path, filename: str, level: str,
+                       resolution: str, max_size_mb: float | None) -> None:
+    def on_progress(frac: float) -> None:
+        COMPRESS_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    try:
+        compress_video(video_path, output_path, level, resolution, max_size_mb, on_progress)
+    except (RuntimeError, ValueError) as e:
+        COMPRESS_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    stem = Path(filename).stem
+    output_name = f"{stem}_compressed.mp4"
+    save_project("compress_media", filename, "output", output_path.name, output_name)
+    COMPRESS_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": Path(output_path.name).stem,
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+    }
+
+
 @app.post("/api/compress-media")
 async def api_compress_media(
     video: UploadFile = File(...),
     level: str = Form("medium"),
     resolution: str = Form("original"),
+    max_size_mb: float | None = Form(None),
 ):
     if level not in COMPRESS_LEVELS:
         raise HTTPException(400, f"Niveau non supporté : {level}")
     if resolution not in RESOLUTIONS:
         raise HTTPException(400, f"Résolution non supportée : {resolution}")
+    if max_size_mb is not None and max_size_mb <= 0:
+        raise HTTPException(400, "La taille maximale doit être positive.")
 
     job_id = uuid.uuid4().hex
     video_file = f"{job_id}_{video.filename}"
@@ -535,13 +564,20 @@ async def api_compress_media(
         shutil.copyfileobj(video.file, f)
     save_project("upload", None, "uploads", video_file, video.filename)
 
-    try:
-        compress_video(video_path, output_path, level, resolution)
-    except RuntimeError as e:
-        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+    COMPRESS_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_compress_job,
+        args=(job_id, video_path, output_path, video.filename, level, resolution, max_size_mb),
+        daemon=True,
+    )
+    thread.start()
 
-    stem = Path(video.filename).stem
-    output_name = f"{stem}_compressed.mp4"
-    save_project("compress_media", video.filename, "output", output_file, output_name)
+    return {"job_id": job_id}
 
-    return FileResponse(output_path, filename=output_name, media_type="application/octet-stream")
+
+@app.get("/api/compress-media/{job_id}/progress")
+def compress_progress(job_id: str):
+    job = COMPRESS_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
