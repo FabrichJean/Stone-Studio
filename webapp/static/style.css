@@ -646,6 +646,10 @@ h1, h2, h3, .serif {
   cursor: not-allowed;
 }
 
+.btn-primary[hidden] {
+  display: none;
+}
+
 .status { margin-top: 12px; font-size: 13px; color: var(--text-muted); }
 .status.error { color: #c0392b; }
 .status.success { color: #1e7e34; }
