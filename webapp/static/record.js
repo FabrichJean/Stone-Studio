@@ -18,6 +18,7 @@ const confirmStartBtn = document.getElementById("confirmStartBtn");
 const pauseBtn = document.getElementById("pauseBtn");
 const stopBtn = document.getElementById("stopBtn");
 const restartBtn = document.getElementById("restartBtn");
+const downloadBtn = document.getElementById("downloadBtn");
 const retryBtn = document.getElementById("retryBtn");
 const status = document.getElementById("status");
 const info = document.getElementById("info");
@@ -45,6 +46,7 @@ let chunks = [];
 let recordedBlob = null;
 let recordedName = "";
 let recordedBytes = 0;
+let savedProjectId = null;
 let startedAt = 0;
 let pausedTotal = 0; // millisecondes cumulées en pause
 let pausedAt = 0;
@@ -377,6 +379,8 @@ startBtn.addEventListener("click", async () => {
   resultStage.hidden = true;
   retryBtn.hidden = true;
   restartBtn.hidden = true;
+  downloadBtn.hidden = true;
+  savedProjectId = null;
   info.innerHTML = "";
   captureStage.hidden = false;
   startBtn.hidden = true;
@@ -524,10 +528,12 @@ restartBtn.addEventListener("click", () => {
   resultPreview.removeAttribute("src");
   recordedBlob = null;
   chunks = [];
+  savedProjectId = null;
 
   resultStage.hidden = true;
   timerRow.hidden = true;
   restartBtn.hidden = true;
+  downloadBtn.hidden = true;
   retryBtn.hidden = true;
   info.innerHTML = "";
   setupPanel.hidden = false;
@@ -541,6 +547,7 @@ async function saveRecording() {
 
   const format = document.getElementById("format").value;
   retryBtn.hidden = true;
+  downloadBtn.hidden = true;
   restartBtn.disabled = true;
   setStatus("Finalisation du fichier (conversion ffmpeg)…");
 
@@ -557,6 +564,9 @@ async function saveRecording() {
       throw new Error(err.detail || "Erreur inconnue");
     }
     const project = await res.json();
+    savedProjectId = project.id;
+    downloadBtn.hidden = false;
+    downloadBtn.disabled = false;
     setStatus(`Enregistrement ajouté à vos projets : ${project.output_name} (${formatBytesCommon(project.size)}).`, "success");
   } catch (e) {
     // La capture n'est que dans le navigateur : on garde de quoi retenter.
@@ -568,6 +578,30 @@ async function saveRecording() {
 }
 
 retryBtn.addEventListener("click", saveRecording);
+
+downloadBtn.addEventListener("click", async () => {
+  if (!savedProjectId) return;
+
+  downloadBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${savedProjectId}/download`);
+    if (!res.ok) throw new Error("Téléchargement impossible.");
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : `${recordedName}.${document.getElementById("format").value}`;
+
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    setStatus(`Erreur de téléchargement : ${e.message}`, "error");
+  } finally {
+    downloadBtn.disabled = false;
+  }
+});
 
 window.addEventListener("beforeunload", (e) => {
   if (recorder && recorder.state !== "inactive") {
