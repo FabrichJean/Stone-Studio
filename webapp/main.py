@@ -46,12 +46,10 @@ from studio_chain import ChainError, concat_clips, run_chain  # noqa: E402
 UPLOADS_DIR = ROOT / "uploads"
 OUTPUT_DIR = ROOT / "output"
 THUMBS_DIR = ROOT / "thumbnails"
-PREVIEWS_DIR = ROOT / "previews"
 PROJECTS_FILE = ROOT / "projects.json"
 UPLOADS_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 THUMBS_DIR.mkdir(exist_ok=True)
-PREVIEWS_DIR.mkdir(exist_ok=True)
 
 DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 
@@ -174,12 +172,6 @@ def _resolve_project_path(project_id: str) -> tuple[Path, dict]:
     return path, record
 
 
-def _prune_previews(keep: int = 30) -> None:
-    files = sorted(PREVIEWS_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for stale in files[keep:]:
-        stale.unlink(missing_ok=True)
-
-
 @app.post("/api/studio/upload")
 async def api_studio_upload(file: UploadFile = File(...)):
     file_id = uuid.uuid4().hex
@@ -193,7 +185,7 @@ async def api_studio_upload(file: UploadFile = File(...)):
     return record
 
 
-def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], mode: str, base_name: str) -> None:
+def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], base_name: str) -> None:
     def on_progress(frac: float) -> None:
         STUDIO_JOBS[job_id]["percent"] = round(frac * 100, 1)
 
@@ -202,18 +194,6 @@ def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], mode: str
             result_path = run_chain(source_path, chain, Path(tmp), on_progress)
         except ChainError as e:
             STUDIO_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
-            return
-
-        if mode == "preview":
-            preview_path = PREVIEWS_DIR / f"{job_id}{result_path.suffix}"
-            shutil.copyfile(result_path, preview_path)
-            _prune_previews()
-            STUDIO_JOBS[job_id] = {
-                "status": "done", "percent": 100,
-                "preview_url": f"/api/studio/preview/{job_id}",
-                "preview_ext": result_path.suffix,
-                "media_type": "video" if result_path.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"} else "audio",
-            }
             return
 
         output_file = f"{job_id}{result_path.suffix}"
@@ -233,11 +213,7 @@ def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], mode: str
 
 
 @app.post("/api/studio/render")
-async def api_studio_render(
-    project_id: str = Form(...), chain: str = Form(...), mode: str = Form("preview")
-):
-    if mode not in ("preview", "export"):
-        raise HTTPException(400, "Mode invalide")
+async def api_studio_render(project_id: str = Form(...), chain: str = Form(...)):
     try:
         parsed_chain = json.loads(chain)
     except json.JSONDecodeError:
@@ -249,7 +225,7 @@ async def api_studio_render(
     job_id = uuid.uuid4().hex
     STUDIO_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
-        target=_run_studio_job, args=(job_id, source_path, parsed_chain, mode, base_name), daemon=True,
+        target=_run_studio_job, args=(job_id, source_path, parsed_chain, base_name), daemon=True,
     )
     thread.start()
     return {"job_id": job_id}
@@ -261,18 +237,6 @@ def studio_render_progress(job_id: str):
     if not job:
         raise HTTPException(404, "Job introuvable")
     return job
-
-
-@app.get("/api/studio/preview/{job_id}")
-def studio_preview(job_id: str):
-    job = STUDIO_JOBS.get(job_id)
-    if not job or job.get("status") != "done" or not job.get("preview_ext"):
-        raise HTTPException(404, "Aperçu introuvable")
-    path = PREVIEWS_DIR / f"{job_id}{job['preview_ext']}"
-    if not path.exists():
-        raise HTTPException(404, "Fichier introuvable")
-    media_type = "video/mp4" if job["media_type"] == "video" else "audio/mpeg"
-    return FileResponse(path, media_type=media_type)
 
 
 def _run_timeline_export_job(job_id: str, paths: list[Path], base_name: str) -> None:
