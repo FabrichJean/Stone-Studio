@@ -44,3 +44,20 @@ def generate_thumbnail(input_path: Path, output_path: Path, duration: float | No
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.returncode == 0 and output_path.exists()
+
+
+FILMSTRIP_FRAMES = 6
+
+
+def generate_filmstrip(input_path: Path, output_path: Path, duration: float | None) -> bool:
+    """Génère une bande de vignettes (plusieurs images extraites régulièrement, mises côte à
+    côte en une seule image) pour donner un aperçu séquentiel du clip dans la timeline."""
+    fps = FILMSTRIP_FRAMES / duration if duration else 1
+    cmd = [
+        "ffmpeg", "-y", "-i", str(input_path),
+        "-vf", f"fps={fps},scale=120:-1,tile={FILMSTRIP_FRAMES}x1",
+        "-frames:v", "1",
+        str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode == 0 and output_path.exists()
