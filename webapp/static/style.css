@@ -599,7 +599,7 @@ h1, h2, h3, .serif {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px 18px;
+  padding: 16px 18px 18px;
 }
 
 .studio-timeline-header h3 {
@@ -608,53 +608,92 @@ h1, h2, h3, .serif {
   margin-bottom: 12px;
 }
 
+.studio-timeline-scroll {
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--bg-light);
+}
+
+.studio-timeline-ruler {
+  position: relative;
+  height: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.studio-ruler-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border);
+}
+
+.studio-ruler-tick span {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .studio-timeline-track {
   display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  height: 64px;
 }
 
 .studio-clip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  white-space: nowrap;
+  position: relative;
   flex-shrink: 0;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  height: 100%;
+  border-right: 2px solid var(--bg-light);
+  background-color: var(--sidebar-active-bg);
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  cursor: pointer;
+  overflow: hidden;
 }
 
-.studio-clip:hover { background: var(--bg-light); }
+.studio-clip.active { outline: 2.5px solid var(--accent); outline-offset: -2.5px; z-index: 1; }
 
-.studio-clip.active {
-  border-color: var(--accent);
-  background: #fbf3ee;
+.studio-clip-audio {
+  background-color: #3a3630;
+  background-image: repeating-linear-gradient(
+    90deg, rgba(255, 255, 255, 0.55) 0 2px, transparent 2px 6px
+  );
+  background-position: center;
 }
 
-.studio-clip .icon { color: var(--accent); display: flex; }
-
-.studio-clip-name {
-  max-width: 140px;
+.studio-clip-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(20, 18, 15, 0.6);
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 6px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .studio-clip-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
   border: none;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 2px;
   border-radius: 4px;
+  background: rgba(20, 18, 15, 0.55);
+  color: #fff;
+  cursor: pointer;
+  font-size: 10px;
 }
 
-.studio-clip-remove:hover { background: var(--sidebar-active-bg); color: var(--text-dark); }
+.studio-clip-remove:hover { background: rgba(20, 18, 15, 0.85); }
 
 .studio-export-done {
   margin-top: 16px;
