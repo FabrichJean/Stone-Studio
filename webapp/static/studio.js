@@ -188,6 +188,7 @@ const FORMS = {
   const overlay = document.getElementById("previewOverlay");
   const overlayLabel = document.getElementById("previewOverlayLabel");
   const timelineTrack = document.getElementById("timelineTrack");
+  const timelineRuler = document.getElementById("timelineRuler");
   const pendingPanel = document.getElementById("pendingPanel");
   const pendingVideo = document.getElementById("pendingVideo");
   const pendingAudio = document.getElementById("pendingAudio");
@@ -202,7 +203,10 @@ const FORMS = {
   const downloadBtn = document.getElementById("downloadBtn");
   const statusEl = document.getElementById("studioStatus");
 
-  let timeline = []; // { id: projectId, name, mediaType, size, localUrl? }
+  const PX_PER_SEC = 40;
+  const MIN_CLIP_PX = 50;
+
+  let timeline = []; // { id: projectId, name, mediaType, size, duration, hasFilmstrip, localUrl? }
   let activeIndex = -1;
   let selectedType = STUDIO_ACTIONS[0].type;
   let pending = null; // { chain, mediaType, previewUrl, title }
@@ -260,18 +264,31 @@ const FORMS = {
     studioEmpty.hidden = true;
     studioMain.hidden = false;
 
-    timeline = [{ id: null, name: file.name, mediaType, size: file.size, localUrl }];
+    timeline = [{ id: null, name: file.name, mediaType, size: file.size, duration: null, hasFilmstrip: false, localUrl }];
     activeIndex = 0;
     setActiveClip(0);
     selectAction(selectedType);
     renderTimeline();
 
+    const mediaEl = mediaType === "audio" ? audioEl : videoEl;
+    mediaEl.addEventListener("loadedmetadata", function onMeta() {
+      mediaEl.removeEventListener("loadedmetadata", onMeta);
+      if (timeline[0] && timeline[0].duration === null) {
+        timeline[0].duration = mediaEl.duration;
+        renderTimeline();
+      }
+    });
+
     const formData = new FormData();
     formData.append("file", file);
     fetch("/api/studio/upload", { method: "POST", body: formData })
       .then((r) => r.json())
-      .then((data) => {
-        timeline[0].id = data.project_id;
+      .then((record) => {
+        if (!timeline[0]) return;
+        timeline[0].id = record.id;
+        timeline[0].duration = record.duration;
+        timeline[0].hasFilmstrip = record.has_filmstrip;
+        timeline[0].mediaType = record.media_type;
         renderTimeline();
       })
       .catch(() => { statusEl.textContent = "Erreur lors de l'import du fichier."; statusEl.className = "status error"; });
@@ -294,14 +311,37 @@ const FORMS = {
     renderTimeline();
   }
 
+  function clipWidth(clip) {
+    return Math.max(MIN_CLIP_PX, Math.round((clip.duration || 3) * PX_PER_SEC));
+  }
+
   function renderTimeline() {
+    const totalDuration = timeline.reduce((sum, c) => sum + (c.duration || 3), 0);
+    const totalWidth = Math.max(timeline.reduce((sum, c) => sum + clipWidth(c), 0), 1);
+
+    timelineRuler.style.width = `${totalWidth}px`;
+    timelineRuler.innerHTML = "";
+    const secondsCount = Math.ceil(totalDuration) + 1;
+    for (let s = 0; s <= secondsCount; s++) {
+      const tick = document.createElement("div");
+      tick.className = "studio-ruler-tick";
+      tick.style.left = `${s * PX_PER_SEC}px`;
+      tick.innerHTML = `<span>${formatDurationCommon(s)}</span>`;
+      timelineRuler.appendChild(tick);
+    }
+
+    timelineTrack.style.width = `${totalWidth}px`;
     timelineTrack.innerHTML = "";
     timeline.forEach((clip, i) => {
       const block = document.createElement("div");
-      block.className = "studio-clip" + (i === activeIndex ? " active" : "");
+      const isAudio = clip.mediaType === "audio";
+      block.className = "studio-clip" + (i === activeIndex ? " active" : "") + (isAudio ? " studio-clip-audio" : "");
+      block.style.width = `${clipWidth(clip)}px`;
+      if (!isAudio && clip.hasFilmstrip) {
+        block.style.backgroundImage = `url(/api/projects/${clip.id}/filmstrip)`;
+      }
       block.innerHTML = `
-        <span class="icon">${ICONS[clip.mediaType === "audio" ? "headphones" : "play"] || ""}</span>
-        <span class="studio-clip-name">${clip.name}</span>
+        <span class="studio-clip-label">${clip.name}</span>
         <button type="button" class="studio-clip-remove" title="Retirer">✕</button>`;
       block.addEventListener("click", (e) => {
         if (e.target.closest(".studio-clip-remove")) return;
@@ -404,7 +444,10 @@ const FORMS = {
       .then((r) => r.json())
       .then((data) => pollJob(data.job_id, (job) => {
         btns.forEach((b) => (b.disabled = false));
-        const newClip = { id: job.project_id, name: job.output_name, mediaType: pending.mediaType, size: job.output_size };
+        const newClip = {
+          id: job.project_id, name: job.output_name, mediaType: job.media_type, size: job.output_size,
+          duration: job.duration, hasFilmstrip: job.has_filmstrip,
+        };
         if (mode === "replace") {
           timeline[activeIndex] = newClip;
           renderTimeline();
