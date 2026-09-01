@@ -4,6 +4,7 @@
 import json
 import shutil
 import sys
+import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -40,14 +41,17 @@ from screen_record import (  # noqa: E402
 from noise_removal import LEVELS as NOISE_LEVELS, remove_noise  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
+from studio_chain import ChainError, concat_clips, run_chain  # noqa: E402
 
 UPLOADS_DIR = ROOT / "uploads"
 OUTPUT_DIR = ROOT / "output"
 THUMBS_DIR = ROOT / "thumbnails"
+PREVIEWS_DIR = ROOT / "previews"
 PROJECTS_FILE = ROOT / "projects.json"
 UPLOADS_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 THUMBS_DIR.mkdir(exist_ok=True)
+PREVIEWS_DIR.mkdir(exist_ok=True)
 
 DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 
@@ -58,6 +62,7 @@ TRIM_JOBS: dict[str, dict] = {}
 RECORD_JOBS: dict[str, dict] = {}
 ORIENTATION_JOBS: dict[str, dict] = {}
 SPEED_JOBS: dict[str, dict] = {}
+STUDIO_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -96,6 +101,7 @@ TOOL_LABELS = {
     "screen_record": "Enregistrement écran",
     "noise_removal": "Suppression bruit",
     "compress_media": "Compression vidéo",
+    "studio_chain": "Studio",
 }
 
 
@@ -149,6 +155,164 @@ def index(request: Request):
 @app.get("/studio")
 def studio_page(request: Request):
     return templates.TemplateResponse(request, "studio.html", {"active_tool": "studio"})
+
+
+def _resolve_project_path(project_id: str) -> tuple[Path, dict]:
+    record = next((p for p in load_projects() if p["id"] == project_id), None)
+    if not record:
+        raise HTTPException(404, "Projet introuvable")
+    path = DIRS[record.get("output_dir", "output")] / record["output_file"]
+    if not path.exists():
+        raise HTTPException(404, "Fichier introuvable")
+    return path, record
+
+
+def _prune_previews(keep: int = 30) -> None:
+    files = sorted(PREVIEWS_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for stale in files[keep:]:
+        stale.unlink(missing_ok=True)
+
+
+@app.post("/api/studio/upload")
+async def api_studio_upload(file: UploadFile = File(...)):
+    file_id = uuid.uuid4().hex
+    stored_name = f"{file_id}_{file.filename}"
+    path = UPLOADS_DIR / stored_name
+
+    with path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    save_project("upload", None, "uploads", stored_name, file.filename)
+
+    return {"project_id": Path(stored_name).stem}
+
+
+def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], mode: str, base_name: str) -> None:
+    def on_progress(frac: float) -> None:
+        STUDIO_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            result_path = run_chain(source_path, chain, Path(tmp), on_progress)
+        except ChainError as e:
+            STUDIO_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+            return
+
+        if mode == "preview":
+            preview_path = PREVIEWS_DIR / f"{job_id}{result_path.suffix}"
+            shutil.copyfile(result_path, preview_path)
+            _prune_previews()
+            STUDIO_JOBS[job_id] = {
+                "status": "done", "percent": 100,
+                "preview_url": f"/api/studio/preview/{job_id}",
+                "preview_ext": result_path.suffix,
+                "media_type": "video" if result_path.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"} else "audio",
+            }
+            return
+
+        output_file = f"{job_id}{result_path.suffix}"
+        output_path = OUTPUT_DIR / output_file
+        shutil.copyfile(result_path, output_path)
+        output_name = f"{base_name}{result_path.suffix}"
+        save_project("studio_chain", base_name, "output", output_file, output_name)
+        STUDIO_JOBS[job_id] = {
+            "status": "done", "percent": 100,
+            "project_id": Path(output_file).stem,
+            "output_name": output_name,
+            "output_size": output_path.stat().st_size,
+        }
+
+
+@app.post("/api/studio/render")
+async def api_studio_render(
+    project_id: str = Form(...), chain: str = Form(...), mode: str = Form("preview")
+):
+    if mode not in ("preview", "export"):
+        raise HTTPException(400, "Mode invalide")
+    try:
+        parsed_chain = json.loads(chain)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Chaîne d'actions invalide")
+
+    source_path, record = _resolve_project_path(project_id)
+    base_name = Path(record["output_name"]).stem
+
+    job_id = uuid.uuid4().hex
+    STUDIO_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_studio_job, args=(job_id, source_path, parsed_chain, mode, base_name), daemon=True,
+    )
+    thread.start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/studio/render/{job_id}/progress")
+def studio_render_progress(job_id: str):
+    job = STUDIO_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job introuvable")
+    return job
+
+
+@app.get("/api/studio/preview/{job_id}")
+def studio_preview(job_id: str):
+    job = STUDIO_JOBS.get(job_id)
+    if not job or job.get("status") != "done" or not job.get("preview_ext"):
+        raise HTTPException(404, "Aperçu introuvable")
+    path = PREVIEWS_DIR / f"{job_id}{job['preview_ext']}"
+    if not path.exists():
+        raise HTTPException(404, "Fichier introuvable")
+    media_type = "video/mp4" if job["media_type"] == "video" else "audio/mpeg"
+    return FileResponse(path, media_type=media_type)
+
+
+def _run_timeline_export_job(job_id: str, paths: list[Path], base_name: str) -> None:
+    def on_progress(frac: float) -> None:
+        STUDIO_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            result_path = concat_clips(paths, Path(tmp), on_progress)
+        except ChainError as e:
+            STUDIO_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+            return
+
+        output_file = f"{job_id}{result_path.suffix}"
+        output_path = OUTPUT_DIR / output_file
+        shutil.copyfile(result_path, output_path)
+        output_name = f"{base_name}{result_path.suffix}"
+        save_project("studio_chain", base_name, "output", output_file, output_name)
+        STUDIO_JOBS[job_id] = {
+            "status": "done", "percent": 100,
+            "project_id": Path(output_file).stem,
+            "output_name": output_name,
+            "output_size": output_path.stat().st_size,
+        }
+
+
+@app.post("/api/studio/export-timeline")
+async def api_studio_export_timeline(clip_ids: str = Form(...)):
+    try:
+        ids = json.loads(clip_ids)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Timeline invalide")
+    if not ids:
+        raise HTTPException(400, "La timeline est vide")
+
+    paths = []
+    base_name = None
+    for cid in ids:
+        path, record = _resolve_project_path(cid)
+        paths.append(path)
+        if base_name is None:
+            base_name = Path(record["output_name"]).stem
+
+    job_id = uuid.uuid4().hex
+    STUDIO_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_timeline_export_job, args=(job_id, paths, base_name), daemon=True,
+    )
+    thread.start()
+    return {"job_id": job_id}
 
 
 @app.get("/trim")
