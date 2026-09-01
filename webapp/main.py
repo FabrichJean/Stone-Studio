@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "tools" / "noise_removal"))
 sys.path.insert(0, str(ROOT / "tools" / "compress_media"))
 from compress_media import LEVELS as COMPRESS_LEVELS, RESOLUTIONS, compress_video  # noqa: E402
 from extract_audio import FORMATS, extract_audio  # noqa: E402
-from media_utils import generate_thumbnail, probe_media  # noqa: E402
+from media_utils import generate_filmstrip, generate_thumbnail, probe_media  # noqa: E402
 from orientation import (  # noqa: E402
     ACTIONS as ORIENTATION_ACTIONS,
     ASPECT_RATIOS,
@@ -113,7 +113,7 @@ def load_projects() -> list[dict]:
 
 def save_project(
     tool: str, input_name: str | None, output_dir: str, output_file: str, output_name: str
-) -> None:
+) -> dict:
     label = TOOL_LABELS[tool]
     file_path = DIRS[output_dir] / output_file
     output_size = file_path.stat().st_size
@@ -122,12 +122,14 @@ def save_project(
     project_id = Path(output_file).stem
 
     has_thumbnail = False
+    has_filmstrip = False
     if media_info["media_type"] == "video":
         thumb_path = THUMBS_DIR / f"{project_id}.jpg"
         has_thumbnail = generate_thumbnail(file_path, thumb_path, media_info["duration"])
+        filmstrip_path = THUMBS_DIR / f"{project_id}_filmstrip.jpg"
+        has_filmstrip = generate_filmstrip(file_path, filmstrip_path, media_info["duration"])
 
-    projects = load_projects()
-    projects.insert(0, {
+    record = {
         "id": project_id,
         "tool": tool,
         "tool_label": label,
@@ -142,9 +144,14 @@ def save_project(
         "width": media_info["width"],
         "height": media_info["height"],
         "has_thumbnail": has_thumbnail,
+        "has_filmstrip": has_filmstrip,
         "created_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }
+
+    projects = load_projects()
+    projects.insert(0, record)
     PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
+    return record
 
 
 @app.get("/")
@@ -181,9 +188,9 @@ async def api_studio_upload(file: UploadFile = File(...)):
 
     with path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
-    save_project("upload", None, "uploads", stored_name, file.filename)
+    record = save_project("upload", None, "uploads", stored_name, file.filename)
 
-    return {"project_id": Path(stored_name).stem}
+    return record
 
 
 def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], mode: str, base_name: str) -> None:
@@ -213,12 +220,15 @@ def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], mode: str
         output_path = OUTPUT_DIR / output_file
         shutil.copyfile(result_path, output_path)
         output_name = f"{base_name}{result_path.suffix}"
-        save_project("studio_chain", base_name, "output", output_file, output_name)
+        record = save_project("studio_chain", base_name, "output", output_file, output_name)
         STUDIO_JOBS[job_id] = {
             "status": "done", "percent": 100,
-            "project_id": Path(output_file).stem,
+            "project_id": record["id"],
             "output_name": output_name,
             "output_size": output_path.stat().st_size,
+            "duration": record["duration"],
+            "media_type": record["media_type"],
+            "has_filmstrip": record["has_filmstrip"],
         }
 
 
@@ -280,12 +290,15 @@ def _run_timeline_export_job(job_id: str, paths: list[Path], base_name: str) -> 
         output_path = OUTPUT_DIR / output_file
         shutil.copyfile(result_path, output_path)
         output_name = f"{base_name}{result_path.suffix}"
-        save_project("studio_chain", base_name, "output", output_file, output_name)
+        record = save_project("studio_chain", base_name, "output", output_file, output_name)
         STUDIO_JOBS[job_id] = {
             "status": "done", "percent": 100,
-            "project_id": Path(output_file).stem,
+            "project_id": record["id"],
             "output_name": output_name,
             "output_size": output_path.stat().st_size,
+            "duration": record["duration"],
+            "media_type": record["media_type"],
+            "has_filmstrip": record["has_filmstrip"],
         }
 
 
@@ -383,6 +396,14 @@ def project_thumbnail(project_id: str):
     path = THUMBS_DIR / f"{project_id}.jpg"
     if not path.exists():
         raise HTTPException(404, "Pas de miniature")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/api/projects/{project_id}/filmstrip")
+def project_filmstrip(project_id: str):
+    path = THUMBS_DIR / f"{project_id}_filmstrip.jpg"
+    if not path.exists():
+        raise HTTPException(404, "Pas de bande de vignettes")
     return FileResponse(path, media_type="image/jpeg")
 
 
