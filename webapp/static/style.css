@@ -523,77 +523,54 @@ h1, h2, h3, .serif {
 
 @keyframes studio-spin { to { transform: rotate(360deg); } }
 
-.studio-pending-panel {
+.studio-destination-toggle {
   display: flex;
-  gap: 18px;
-  background: var(--panel);
-  border: 1px solid var(--accent);
-  border-radius: 12px;
-  padding: 16px 18px;
-  margin-bottom: 20px;
-}
-
-.studio-pending-panel[hidden] { display: none; }
-
-.studio-pending-preview {
-  width: 220px;
-  flex-shrink: 0;
-  background: #000;
+  gap: 6px;
+  background: var(--bg-light);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
+  padding: 3px;
+  margin-bottom: 16px;
 }
 
-.studio-pending-preview video,
-.studio-pending-preview audio {
-  width: 100%;
-  display: block;
-}
-
-.studio-pending-preview video[hidden],
-.studio-pending-preview audio[hidden] { display: none; }
-
-.studio-pending-info {
+.studio-destination-btn {
   flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.studio-pending-title {
-  font-weight: 600;
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.studio-pending-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 14px;
-}
-
-.studio-pending-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.studio-pending-actions .btn-primary,
-.studio-pending-actions .btn-secondary { width: auto; padding: 8px 14px; }
-
-.btn-text {
   border: none;
   background: none;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
+  border-radius: 6px;
   padding: 8px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
-.btn-text:hover { color: var(--text-dark); }
+.studio-destination-btn.active {
+  background: var(--panel);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(38, 36, 33, 0.1);
+}
+
+.studio-clip-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--sidebar-active-bg) !important;
+  background-image: none !important;
+  cursor: default;
+}
+
+.studio-clip-pending .spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(38, 36, 33, 0.2);
+  border-top-color: var(--accent);
+  animation: studio-spin 0.7s linear infinite;
+}
 
 .studio-timeline {
   background: var(--panel);
@@ -612,7 +589,11 @@ h1, h2, h3, .serif {
   overflow-x: auto;
   border-radius: 8px;
   background: var(--bg-light);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+
+.studio-timeline-scroll::-webkit-scrollbar { display: none; }
 
 .studio-timeline-ruler {
   position: relative;
