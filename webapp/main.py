@@ -146,6 +146,11 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"active_tool": "extract_audio"})
 
 
+@app.get("/studio")
+def studio_page(request: Request):
+    return templates.TemplateResponse(request, "studio.html", {"active_tool": "studio"})
+
+
 @app.get("/trim")
 def trim_page(request: Request):
     return templates.TemplateResponse(request, "trim.html", {"active_tool": "trim_media"})

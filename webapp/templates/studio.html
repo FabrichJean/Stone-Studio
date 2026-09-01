@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+    <div class="studio-view">
+      <div class="studio-tabs" id="studioTabs"></div>
+      <div class="studio-frame-wrap">
+        <iframe id="studioFrame" class="studio-frame" title="Outil actif"></iframe>
+      </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_url('icons.js') }}"></script>
+<script src="{{ static_url('studio.js') }}"></script>
+{% endblock %}
