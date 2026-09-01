@@ -157,15 +157,6 @@ function autoLoadFromUrl(onSelect) {
 // À appeler une fois un traitement terminé, avec l'id du projet résultat, pour proposer
 // de l'envoyer directement vers un autre outil (sans re-télécharger puis re-uploader).
 function renderSendTo(containerId, projectId, currentToolKey) {
-  // Si cette page est chargée dans une iframe Studio, on remonte le résultat au parent
-  // pour que l'onglet suivant reprenne automatiquement ce fichier comme entrée.
-  if (window.parent !== window && projectId) {
-    window.parent.postMessage(
-      { type: "stone-studio:project-updated", projectId, toolKey: currentToolKey },
-      window.location.origin
-    );
-  }
-
   const container = document.getElementById(containerId);
   if (!container || !projectId) return;
 

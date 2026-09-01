@@ -4,11 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Stone Studio</title>
-<script>
-  // Marque la page comme "embarquée" avant le premier rendu si elle tourne dans l'iframe
-  // Studio, pour que le CSS masque sa propre sidebar/nav (Studio a déjà la sienne).
-  if (window.self !== window.top) document.documentElement.classList.add("embedded");
-</script>
 <link rel="stylesheet" href="{{ static_url('style.css') }}" />
 </head>
 <body>
