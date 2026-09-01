@@ -12,9 +12,9 @@ for _pkg in ("extract_audio", "trim_media", "speed_media", "orientation", "noise
     sys.path.insert(0, str(ROOT / "tools" / _pkg))
 
 from extract_audio import extract_audio  # noqa: E402
-from trim_media import trim_media  # noqa: E402
-from speed_media import change_speed  # noqa: E402
-from orientation import change_orientation  # noqa: E402
+from trim_media import combine_segments, trim_media  # noqa: E402
+from speed_media import change_speed, speed_segments  # noqa: E402
+from orientation import change_orientation, orient_segments  # noqa: E402
 from compress_media import compress_video  # noqa: E402
 from noise_removal import remove_noise  # noqa: E402
 
@@ -42,24 +42,44 @@ class ChainError(RuntimeError):
 
 
 def _run_trim(inp: Path, out: Path, params: dict, on_progress: ProgressCallback | None) -> None:
+    if params.get("mode") == "segments":
+        segments = params.get("segments") or []
+        if not segments:
+            raise ChainError("Découpage : ajoutez au moins un morceau.")
+        combine_segments(inp, [(s["start"], s["end"]) for s in segments], out, on_progress=on_progress)
+        return
     if not params.get("start"):
         raise ChainError("Découpage : un point de départ est requis.")
     trim_media(inp, out, params["start"], params.get("end") or None, on_progress=on_progress)
 
 
 def _run_speed(inp: Path, out: Path, params: dict, on_progress: ProgressCallback | None) -> None:
+    if params.get("mode") == "segments":
+        segments = params.get("segments") or []
+        if not segments:
+            raise ChainError("Vitesse : ajoutez au moins un morceau.")
+        speed_segments(inp, segments, out, on_progress=on_progress)
+        return
     change_speed(inp, out, float(params.get("factor", 1)), on_progress=on_progress)
 
 
 def _run_orientation(inp: Path, out: Path, params: dict, on_progress: ProgressCallback | None) -> None:
+    if params.get("mode") == "segments":
+        segments = params.get("segments") or []
+        if not segments:
+            raise ChainError("Transformation : ajoutez au moins un morceau.")
+        orient_segments(inp, segments, out, on_progress=on_progress)
+        return
     actions = params.get("actions") or []
     aspect_ratio = params.get("aspect_ratio") or None
-    if not actions and not aspect_ratio:
+    crop_rect = params.get("crop_rect") or None
+    if not actions and not aspect_ratio and not crop_rect:
         raise ChainError("Transformation : choisissez au moins une rotation ou un format d'affichage.")
     change_orientation(
         inp, out, actions,
         aspect_ratio=aspect_ratio,
         aspect_position=float(params.get("aspect_position", 0.5)),
+        crop_rect=crop_rect,
         on_progress=on_progress,
     )
 
