@@ -22,7 +22,6 @@ output/*
 # Données locales
 projects.json
 thumbnails/
-previews/
 
 # OS / éditeurs
 .DS_Store
