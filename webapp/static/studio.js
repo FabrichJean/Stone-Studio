@@ -189,13 +189,6 @@ const FORMS = {
   const overlayLabel = document.getElementById("previewOverlayLabel");
   const timelineTrack = document.getElementById("timelineTrack");
   const timelineRuler = document.getElementById("timelineRuler");
-  const pendingPanel = document.getElementById("pendingPanel");
-  const pendingVideo = document.getElementById("pendingVideo");
-  const pendingAudio = document.getElementById("pendingAudio");
-  const pendingTitle = document.getElementById("pendingTitle");
-  const pendingReplaceBtn = document.getElementById("pendingReplaceBtn");
-  const pendingAddBtn = document.getElementById("pendingAddBtn");
-  const pendingDiscardBtn = document.getElementById("pendingDiscardBtn");
   const exportProgress = document.getElementById("exportProgress");
   const exportProgressFill = document.getElementById("exportProgressFill");
   const exportProgressLabel = document.getElementById("exportProgressLabel");
@@ -206,10 +199,10 @@ const FORMS = {
   const PX_PER_SEC = 40;
   const MIN_CLIP_PX = 50;
 
-  let timeline = []; // { id: projectId, name, mediaType, size, duration, hasFilmstrip, localUrl? }
+  let timeline = []; // { id: projectId, name, mediaType, size, duration, hasFilmstrip, localUrl?, pending? }
   let activeIndex = -1;
   let selectedType = STUDIO_ACTIONS[0].type;
-  let pending = null; // { chain, mediaType, previewUrl, title }
+  let destination = "replace"; // "replace" | "add"
 
   dropzone.addEventListener("click", () => fileInput.click());
   browseLink.addEventListener("click", (e) => { e.stopPropagation(); fileInput.click(); });
@@ -227,17 +220,13 @@ const FORMS = {
 
   newContentBtn.addEventListener("click", resetStudio);
   exportBtn.addEventListener("click", runExport);
-  pendingReplaceBtn.addEventListener("click", () => commitPending("replace"));
-  pendingAddBtn.addEventListener("click", () => commitPending("add"));
-  pendingDiscardBtn.addEventListener("click", () => { pendingPanel.hidden = true; pending = null; });
 
   function resetStudio() {
     timeline = [];
     activeIndex = -1;
-    pending = null;
+    destination = "replace";
     selectedType = STUDIO_ACTIONS[0].type;
     videoEl.src = ""; audioEl.src = "";
-    pendingPanel.hidden = true;
     exportDone.hidden = true;
     exportProgress.hidden = true;
     statusEl.textContent = "";
@@ -252,8 +241,6 @@ const FORMS = {
     statusEl.textContent = "";
     exportDone.hidden = true;
     exportProgress.hidden = true;
-    pendingPanel.hidden = true;
-    pending = null;
 
     const mediaType = file.type.startsWith("audio/") ? "audio" : "video";
     const localUrl = URL.createObjectURL(file);
@@ -306,8 +293,6 @@ const FORMS = {
       videoEl.src = src; videoEl.hidden = false;
       audioEl.hidden = true; audioEl.src = "";
     }
-    pendingPanel.hidden = true;
-    pending = null;
     renderTimeline();
   }
 
@@ -334,6 +319,14 @@ const FORMS = {
     timelineTrack.innerHTML = "";
     timeline.forEach((clip, i) => {
       const block = document.createElement("div");
+      if (clip.pending) {
+        block.className = "studio-clip studio-clip-pending";
+        block.style.width = `${clipWidth(clip)}px`;
+        block.innerHTML = `<div class="spinner"></div>`;
+        timelineTrack.appendChild(block);
+        return;
+      }
+
       const isAudio = clip.mediaType === "audio";
       block.className = "studio-clip" + (i === activeIndex ? " active" : "") + (isAudio ? " studio-clip-audio" : "");
       block.style.width = `${clipWidth(clip)}px`;
@@ -351,7 +344,7 @@ const FORMS = {
       block.querySelector(".studio-clip-remove").addEventListener("click", () => removeClip(i));
       timelineTrack.appendChild(block);
     });
-    exportBtn.disabled = timeline.length === 0;
+    exportBtn.disabled = timeline.length === 0 || timeline.some((c) => c.pending);
   }
 
   function removeClip(index) {
@@ -374,12 +367,20 @@ const FORMS = {
     selectedType = type;
     renderTabs();
     const form = FORMS[type];
+    const label = destination === "add" ? "Ajouter à la timeline" : "Remplacer le contenu actif";
     panelEl.innerHTML = `
       <h3>${STUDIO_ACTIONS.find((a) => a.type === type).label}</h3>
+      <div class="studio-destination-toggle">
+        <button type="button" class="studio-destination-btn${destination === "replace" ? " active" : ""}" data-dest="replace">Remplacer le contenu actif</button>
+        <button type="button" class="studio-destination-btn${destination === "add" ? " active" : ""}" data-dest="add">Ajouter à la timeline</button>
+      </div>
       ${form.html({})}
       <div class="studio-panel-actions">
-        <button type="button" class="btn-primary" id="applyActionBtn">Appliquer</button>
+        <button type="button" class="btn-primary" id="applyActionBtn">${label}</button>
       </div>`;
+    panelEl.querySelectorAll("[data-dest]").forEach((btn) => {
+      btn.addEventListener("click", () => { destination = btn.dataset.dest; selectAction(type); });
+    });
     document.getElementById("applyActionBtn").addEventListener("click", applyAction);
   }
 
@@ -390,81 +391,61 @@ const FORMS = {
 
     const params = FORMS[selectedType].collect();
     const chainPayload = [{ type: selectedType, enabled: true, params }];
-
-    overlay.hidden = false;
-    overlayLabel.textContent = "Traitement en cours…";
-
     const formData = new FormData();
     formData.append("project_id", activeClip.id);
     formData.append("chain", JSON.stringify(chainPayload));
-    formData.append("mode", "preview");
+
+    if (destination === "add") {
+      // Non bloquant : un placeholder apparaît immédiatement dans la timeline, le clip
+      // réel le remplace une fois le traitement terminé en arrière-plan.
+      const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      timeline.push({ tempId, pending: true, mediaType: null, duration: activeClip.duration });
+      renderTimeline();
+
+      fetch("/api/studio/render", { method: "POST", body: formData })
+        .then((r) => r.json())
+        .then((data) => pollJob(data.job_id, (job) => {
+          const idx = timeline.findIndex((c) => c.tempId === tempId);
+          if (idx === -1) return;
+          timeline[idx] = {
+            id: job.project_id, name: job.output_name, mediaType: job.media_type,
+            size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip,
+          };
+          renderTimeline();
+        }, (err) => {
+          const idx = timeline.findIndex((c) => c.tempId === tempId);
+          if (idx !== -1) { timeline.splice(idx, 1); renderTimeline(); }
+          statusEl.textContent = err;
+          statusEl.className = "status error";
+        }))
+        .catch(() => {
+          const idx = timeline.findIndex((c) => c.tempId === tempId);
+          if (idx !== -1) { timeline.splice(idx, 1); renderTimeline(); }
+        });
+      return;
+    }
+
+    // "Remplacer" affecte directement le contenu actif : on bloque avec un indicateur
+    // de progression le temps du traitement, puisqu'il n'y a rien d'autre à prévisualiser.
+    overlay.hidden = false;
+    overlayLabel.textContent = "Traitement en cours…";
 
     fetch("/api/studio/render", { method: "POST", body: formData })
       .then((r) => r.json())
       .then((data) => pollJob(data.job_id, (job) => {
         overlay.hidden = true;
-        showPendingResult(job, chainPayload);
+        timeline[activeIndex] = {
+          id: job.project_id, name: job.output_name, mediaType: job.media_type,
+          size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip,
+        };
+        renderTimeline();
+        setActiveClip(activeIndex);
       }, (err) => {
         overlay.hidden = true;
         statusEl.textContent = err;
         statusEl.className = "status error";
       }))
       .catch(() => { overlay.hidden = true; });
-  }
-
-  function showPendingResult(job, chainPayload) {
-    const label = STUDIO_ACTIONS.find((a) => a.type === selectedType).label;
-    const summary = FORMS[selectedType].summary(chainPayload[0].params);
-    pending = { chain: chainPayload, mediaType: job.media_type, previewUrl: job.preview_url };
-    pendingTitle.textContent = `${label} — ${summary}`;
-
-    if (job.media_type === "audio") {
-      pendingAudio.src = job.preview_url; pendingAudio.hidden = false;
-      pendingVideo.hidden = true; pendingVideo.src = "";
-    } else {
-      pendingVideo.src = job.preview_url; pendingVideo.hidden = false;
-      pendingAudio.hidden = true; pendingAudio.src = "";
-    }
-    pendingPanel.hidden = false;
-    pendingPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
-
-  function commitPending(mode) {
-    if (!pending) return;
-    const activeClip = timeline[activeIndex];
-    const btns = [pendingReplaceBtn, pendingAddBtn, pendingDiscardBtn];
-    btns.forEach((b) => (b.disabled = true));
-
-    const formData = new FormData();
-    formData.append("project_id", activeClip.id);
-    formData.append("chain", JSON.stringify(pending.chain));
-    formData.append("mode", "export");
-
-    fetch("/api/studio/render", { method: "POST", body: formData })
-      .then((r) => r.json())
-      .then((data) => pollJob(data.job_id, (job) => {
-        btns.forEach((b) => (b.disabled = false));
-        const newClip = {
-          id: job.project_id, name: job.output_name, mediaType: job.media_type, size: job.output_size,
-          duration: job.duration, hasFilmstrip: job.has_filmstrip,
-        };
-        if (mode === "replace") {
-          timeline[activeIndex] = newClip;
-          renderTimeline();
-          setActiveClip(activeIndex);
-        } else {
-          timeline.splice(activeIndex + 1, 0, newClip);
-          renderTimeline();
-        }
-        pendingPanel.hidden = true;
-        pending = null;
-        selectAction(selectedType);
-      }, (err) => {
-        btns.forEach((b) => (b.disabled = false));
-        statusEl.textContent = err;
-        statusEl.className = "status error";
-      }))
-      .catch(() => btns.forEach((b) => (b.disabled = false)));
   }
 
   function runExport() {
