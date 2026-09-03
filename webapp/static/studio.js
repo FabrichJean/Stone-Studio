@@ -1,6 +1,11 @@
 /* Studio : un seul contenu chargé, une chaîne d'actions construite dessus, un export final.
    Chaque action de la chaîne est exécutée côté serveur en réutilisant directement les
-   fonctions ffmpeg des outils existants (voir webapp/studio_chain.py). */
+   fonctions ffmpeg des outils existants (voir webapp/studio_chain.py).
+
+   Les panneaux Découpage / Vitesse / Transformation reproduisent l'intégralité des
+   fonctionnalités de leur page individuelle (piste de découpage avec poignées, mode
+   "par morceaux", recadrage interactif) au lieu d'un simple formulaire réduit — ils
+   pilotent directement l'aperçu principal (#studioVideo / #studioAudio). */
 
 const STUDIO_ACTIONS = [
   { type: "trim", label: "Découpage", icon: "scissors" },
@@ -11,12 +16,29 @@ const STUDIO_ACTIONS = [
   { type: "noise_removal", label: "Suppression bruit", icon: "noise" },
 ];
 
-const ROTATE_LABELS = {
+const ACTION_LABELS = {
   rotate_90_cw: "Rotation 90° horaire",
-  rotate_90_ccw: "Rotation 90° anti-horaire",
+  rotate_90_ccw: "Rotation 90° antihoraire",
   rotate_180: "Rotation 180°",
   flip_horizontal: "Miroir horizontal",
   flip_vertical: "Miroir vertical",
+};
+
+const TRANSFORMS = {
+  rotate_90_cw: "rotate(90deg)",
+  rotate_90_ccw: "rotate(-90deg)",
+  rotate_180: "rotate(180deg)",
+  flip_horizontal: "scaleX(-1)",
+  flip_vertical: "scaleY(-1)",
+};
+
+const ROTATE_90_ACTIONS = new Set(["rotate_90_cw", "rotate_90_ccw"]);
+
+const ASPECT_NUMERIC = {
+  landscape_16_9: 16 / 9,
+  portrait_9_16: 9 / 16,
+  square_1_1: 1,
+  portrait_4_5: 4 / 5,
 };
 
 const ASPECT_LABELS = {
@@ -24,70 +46,26 @@ const ASPECT_LABELS = {
   portrait_9_16: "9:16 Portrait",
   square_1_1: "1:1 Carré",
   portrait_4_5: "4:5 Portrait",
+  custom: "Personnalisé",
 };
 
 const LEVEL_LABELS = { light: "Léger", medium: "Moyen", strong: "Fort" };
 const NOISE_LEVEL_LABELS = { light: "Légère", medium: "Moyenne", strong: "Forte" };
 const RESOLUTION_LABELS = { original: "Originale", "1080p": "1080p", "720p": "720p", "480p": "480p" };
+const SPEED_FACTORS = ["0.25", "0.5", "0.75", "1", "1.25", "1.5", "2", "3", "4"];
 
+const MIN_GAP = 0.2;
+const MIN_CUSTOM = 0.05;
+
+function secondsToTimestamp(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600).toString().padStart(2, "0");
+  const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, "0");
+  const s = Math.floor(totalSeconds % 60).toString().padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+/* Formulaires simples (un seul champ de valeurs, pas d'état interactif persistant). */
 const FORMS = {
-  trim: {
-    html: (p) => `
-      <div class="params-grid">
-        <label>Début (HH:MM:SS)<input type="text" id="f_start" placeholder="00:00:00" value="${p.start || ""}"></label>
-        <label>Fin (optionnel)<input type="text" id="f_end" placeholder="00:00:00" value="${p.end || ""}"></label>
-      </div>`,
-    collect: () => ({
-      start: document.getElementById("f_start").value.trim(),
-      end: document.getElementById("f_end").value.trim(),
-    }),
-    summary: (p) => `${p.start || "00:00:00"} → ${p.end || "fin"}`,
-  },
-  speed: {
-    html: (p) => `
-      <div class="params-grid">
-        <label>Facteur de vitesse
-          <select id="f_factor">
-            ${["0.25", "0.5", "0.75", "1", "1.25", "1.5", "2", "3", "4"]
-              .map((v) => `<option value="${v}" ${(p.factor || "1") === v ? "selected" : ""}>${v}x${v === "1" ? " (normal)" : ""}</option>`)
-              .join("")}
-          </select>
-        </label>
-      </div>`,
-    collect: () => ({ factor: document.getElementById("f_factor").value }),
-    summary: (p) => `${p.factor}x`,
-  },
-  orientation: {
-    html: (p) => `
-      <div class="params-grid">
-        <label>Rotation / miroir
-          <select id="f_rotate">
-            <option value="">Aucune</option>
-            ${Object.entries(ROTATE_LABELS).map(([k, l]) => `<option value="${k}" ${p.rotate === k ? "selected" : ""}>${l}</option>`).join("")}
-          </select>
-        </label>
-        <label>Format d'affichage
-          <select id="f_aspect">
-            <option value="">Conserver</option>
-            ${Object.entries(ASPECT_LABELS).map(([k, l]) => `<option value="${k}" ${p.aspect_ratio === k ? "selected" : ""}>${l}</option>`).join("")}
-          </select>
-        </label>
-      </div>`,
-    collect: () => {
-      const rotate = document.getElementById("f_rotate").value;
-      return {
-        actions: rotate ? [rotate] : [],
-        rotate,
-        aspect_ratio: document.getElementById("f_aspect").value || null,
-      };
-    },
-    summary: (p) => {
-      const parts = [];
-      if (p.rotate) parts.push(ROTATE_LABELS[p.rotate]);
-      if (p.aspect_ratio) parts.push(ASPECT_LABELS[p.aspect_ratio]);
-      return parts.join(" · ") || "Aucun changement";
-    },
-  },
   compress: {
     html: (p) => `
       <div class="params-grid">
@@ -101,17 +79,23 @@ const FORMS = {
             ${Object.entries(RESOLUTION_LABELS).map(([k, l]) => `<option value="${k}" ${(p.resolution || "original") === k ? "selected" : ""}>${l}</option>`).join("")}
           </select>
         </label>
-        <label>Taille max en MB (optionnel)<input type="text" id="f_max_size" placeholder="ex : 25" value="${p.max_size_mb || ""}"></label>
+      </div>
+      <label class="checkbox-label"><input type="checkbox" id="f_limit_size"> Limiter la taille du fichier</label>
+      <div class="params-grid">
+        <label>Taille max (MB)<input type="number" id="f_max_size" min="1" step="1" value="20" disabled></label>
       </div>`,
-    collect: () => ({
-      level: document.getElementById("f_level").value,
-      resolution: document.getElementById("f_resolution").value,
-      max_size_mb: document.getElementById("f_max_size").value.trim() || null,
-    }),
-    summary: (p) => {
-      const parts = [RESOLUTION_LABELS[p.resolution] || p.resolution, LEVEL_LABELS[p.level] || p.level];
-      if (p.max_size_mb) parts.push(`~${p.max_size_mb} MB`);
-      return parts.join(" · ");
+    collect: () => {
+      const limit = document.getElementById("f_limit_size").checked;
+      return {
+        level: document.getElementById("f_level").value,
+        resolution: document.getElementById("f_resolution").value,
+        max_size_mb: limit ? document.getElementById("f_max_size").value.trim() || null : null,
+      };
+    },
+    init: () => {
+      const limitBox = document.getElementById("f_limit_size");
+      const maxSize = document.getElementById("f_max_size");
+      limitBox.addEventListener("change", () => { maxSize.disabled = !limitBox.checked; });
     },
   },
   extract_audio: {
@@ -150,7 +134,6 @@ const FORMS = {
       channels: document.getElementById("f_channels").value || null,
       sample_rate: document.getElementById("f_sample_rate").value || null,
     }),
-    summary: (p) => `${(p.format || "mp3").toUpperCase()}${p.bitrate ? " · " + p.bitrate : ""}`,
   },
   noise_removal: {
     html: (p) => `
@@ -166,7 +149,6 @@ const FORMS = {
       level: document.getElementById("f_level").value,
       reduce_hum: document.getElementById("f_reduce_hum").checked,
     }),
-    summary: (p) => `${NOISE_LEVEL_LABELS[p.level] || p.level}${p.reduce_hum ? " · anti-ronflement" : ""}`,
   },
 };
 
@@ -185,10 +167,19 @@ const FORMS = {
   const panelEl = document.getElementById("actionPanel");
   const videoEl = document.getElementById("studioVideo");
   const audioEl = document.getElementById("studioAudio");
+  const cropWrap = document.getElementById("studioCropWrap");
+  const cropOverlay = document.getElementById("studioCropOverlay");
+  const cropBox = document.getElementById("studioCropBox");
   const overlay = document.getElementById("previewOverlay");
   const overlayLabel = document.getElementById("previewOverlayLabel");
   const timelineTrack = document.getElementById("timelineTrack");
   const timelineRuler = document.getElementById("timelineRuler");
+  const timelinePlayhead = document.getElementById("timelinePlayhead");
+  const timelineScroll = document.querySelector(".studio-timeline-scroll");
+  const transportStartBtn = document.getElementById("transportStart");
+  const transportPlayBtn = document.getElementById("transportPlay");
+  const transportEndBtn = document.getElementById("transportEnd");
+  const transportTimeEl = document.getElementById("transportTime");
   const exportProgress = document.getElementById("exportProgress");
   const exportProgressFill = document.getElementById("exportProgressFill");
   const exportProgressLabel = document.getElementById("exportProgressLabel");
@@ -204,6 +195,153 @@ const FORMS = {
   let selectedType = STUDIO_ACTIONS[0].type;
   let destination = "replace"; // "replace" | "add"
 
+  function activeMediaEl() {
+    const clip = timeline[activeIndex];
+    return clip && clip.mediaType === "audio" ? audioEl : videoEl;
+  }
+
+  function activeDuration() {
+    const clip = timeline[activeIndex];
+    if (clip && clip.duration) return clip.duration;
+    const media = activeMediaEl();
+    return media && media.duration ? media.duration : 0;
+  }
+
+  /* ===================== Lecteur global de la timeline =====================
+     Contrôle de lecture unique pour l'ensemble de la piste de montage : lit les clips
+     les uns après les autres avec un curseur qui avance sur la règle de temps. Indépendant
+     de l'action "active" (celle éditée dans le panneau de droite) : jouer/chercher dans la
+     timeline ne modifie ni la sélection d'édition en cours ni l'état des panneaux. */
+
+  let playingIndex = -1; // index du clip actuellement chargé dans l'aperçu pour la lecture
+  let playheadTime = 0; // position globale (secondes) sur l'ensemble de la timeline
+  let transportPlaying = false;
+  let transportTickHandler = null;
+  let transportEndedHandler = null;
+  let scrubbing = false;
+
+  function clipStartTime(index) {
+    let t = 0;
+    for (let i = 0; i < index; i++) t += timeline[i].duration || 3;
+    return t;
+  }
+
+  function totalTimelineDuration() {
+    return timeline.reduce((sum, c) => sum + (c.duration || 3), 0);
+  }
+
+  function clipIndexAtTime(t) {
+    let acc = 0;
+    for (let i = 0; i < timeline.length; i++) {
+      const d = timeline[i].duration || 3;
+      if (t < acc + d || i === timeline.length - 1) return i;
+      acc += d;
+    }
+    return 0;
+  }
+
+  function updatePlayheadUI() {
+    const total = totalTimelineDuration();
+    timelinePlayhead.hidden = timeline.length === 0;
+    timelinePlayhead.style.left = `${playheadTime * PX_PER_SEC}px`;
+    transportTimeEl.textContent = `${secondsToTimestamp(playheadTime)} / ${secondsToTimestamp(total)}`;
+  }
+
+  function updateTransportPlayIcon() {
+    transportPlayBtn.classList.toggle("playing", transportPlaying);
+    transportPlayBtn.title = transportPlaying ? "Pause" : "Lecture";
+  }
+
+  // Charge le clip `idx` dans l'aperçu pour la lecture (bascule vidéo/audio si besoin),
+  // sans toucher à `activeIndex` ni au panneau d'édition.
+  function loadClipForPlayback(idx) {
+    const clip = timeline[idx];
+    if (!clip || !clip.id) return null;
+    const media = clip.mediaType === "audio" ? audioEl : videoEl;
+    const other = clip.mediaType === "audio" ? videoEl : audioEl;
+    if (playingIndex !== idx) {
+      other.pause();
+      media.src = clip.localUrl || `/api/projects/${clip.id}/download`;
+      media.hidden = false;
+      other.hidden = true;
+      playingIndex = idx;
+    }
+    return media;
+  }
+
+  function detachTransportTracking() {
+    [videoEl, audioEl].forEach((m) => {
+      if (transportTickHandler) m.removeEventListener("timeupdate", transportTickHandler);
+      if (transportEndedHandler) m.removeEventListener("ended", transportEndedHandler);
+    });
+  }
+
+  function attachTransportTracking(media) {
+    detachTransportTracking();
+    if (!media) return;
+    transportTickHandler = () => {
+      playheadTime = clipStartTime(playingIndex) + media.currentTime;
+      updatePlayheadUI();
+    };
+    transportEndedHandler = () => advanceTransport();
+    media.addEventListener("timeupdate", transportTickHandler);
+    media.addEventListener("ended", transportEndedHandler);
+  }
+
+  function advanceTransport() {
+    if (playingIndex + 1 >= timeline.length) {
+      pauseTransport();
+      seekTo(totalTimelineDuration());
+      return;
+    }
+    const media = loadClipForPlayback(playingIndex + 1);
+    if (!media) { pauseTransport(); return; }
+    const start = () => { media.currentTime = 0; media.play(); };
+    if (media.readyState >= 1) start(); else media.addEventListener("loadedmetadata", start, { once: true });
+    attachTransportTracking(media);
+  }
+
+  function seekTo(time) {
+    if (timeline.length === 0) return;
+    const total = totalTimelineDuration();
+    time = Math.max(0, Math.min(time, total));
+    const idx = clipIndexAtTime(time);
+    const media = loadClipForPlayback(idx);
+    if (!media) return;
+    const local = time - clipStartTime(idx);
+    const applySeek = () => { media.currentTime = local; };
+    if (media.readyState >= 1) applySeek(); else media.addEventListener("loadedmetadata", applySeek, { once: true });
+    playheadTime = time;
+    updatePlayheadUI();
+  }
+
+  function playTransport() {
+    if (timeline.length === 0 || timeline.some((c) => !c.id)) return;
+    if (playheadTime >= totalTimelineDuration() - 0.05) seekTo(0);
+    transportPlaying = true;
+    updateTransportPlayIcon();
+    const idx = clipIndexAtTime(playheadTime);
+    const media = loadClipForPlayback(idx);
+    if (!media) { transportPlaying = false; updateTransportPlayIcon(); return; }
+    const local = playheadTime - clipStartTime(idx);
+    const start = () => { media.currentTime = local; media.play(); };
+    if (media.readyState >= 1) start(); else media.addEventListener("loadedmetadata", start, { once: true });
+    attachTransportTracking(media);
+  }
+
+  function pauseTransport() {
+    transportPlaying = false;
+    updateTransportPlayIcon();
+    detachTransportTracking();
+    if (playingIndex >= 0) {
+      const clip = timeline[playingIndex];
+      const media = clip && clip.mediaType === "audio" ? audioEl : videoEl;
+      media.pause();
+    }
+  }
+
+  function toggleTransportPlay() {
+    if (transportPlaying) pauseTransport(); else playTransport();
   dropzone.addEventListener("click", () => fileInput.click());
   browseLink.addEventListener("click", (e) => { e.stopPropagation(); fileInput.click(); });
   pickProjectLink.addEventListener("click", (e) => { e.stopPropagation(); openProjectPicker(handleFile); });
