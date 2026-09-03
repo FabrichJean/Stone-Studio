@@ -224,6 +224,13 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   flex-shrink: 0;
 }
 
+#panelPickerSearch:focus { outline: none; border-color: var(--accent); }
+
+#panelPickerList {
+  flex: 1;
+  max-height: none;
+}
+
 .launcher-header {
   display: flex;
   align-items: center;
@@ -897,6 +904,18 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.studio-active-clip-actions {
+  display: flex;
+  gap: 12px;
+  align-self: flex-start;
+  font-size: 11px;
+}
+
+.studio-active-clip.dragover {
+  border-color: var(--accent);
+  background: #fbf3ee;
 }
 
 .studio-action-panel h3 {
