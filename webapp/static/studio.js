@@ -206,6 +206,25 @@ const FORMS = {
       e.preventDefault();
       resizing = true;
       studioResizer.classList.add("dragging");
+      document.body.style.userSelect = "none";
+    });
+
+    window.addEventListener("pointermove", (e) => {
+      if (!resizing) return;
+      const bodyRect = studioResizer.parentElement.getBoundingClientRect();
+      const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, bodyRect.right - e.clientX));
+      studioSide.style.width = `${width}px`;
+    });
+
+    window.addEventListener("pointerup", () => {
+      if (!resizing) return;
+      resizing = false;
+      studioResizer.classList.remove("dragging");
+      document.body.style.userSelect = "";
+      localStorage.setItem(STORAGE_KEY, Math.round(parseFloat(studioSide.style.width)));
+    });
+  })();
+
   const PX_PER_SEC = 40;
   const MIN_CLIP_PX = 50;
 
