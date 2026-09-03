@@ -1030,6 +1030,248 @@ const FORMS = {
         cropBox.style.left = `${widthCrop ? offset : 0}px`;
         cropBox.style.top = `${widthCrop ? 0 : offset}px`;
         cropOverlay.hidden = false;
+        aspectHint.hidden = maxOffset < 1;
+      }
+
+      function hasAspectWork() {
+        if (!selectedAspect) return false;
+        return selectedAspect === "custom" ? !!customRect : true;
+      }
+
+      // --- Recadrage : gestionnaires globaux (retirés/reposés à chaque rendu du panneau) ---
+      function onCropBoxDown(e) {
+        if (selectedAspect === "custom") {
+          if (e.target.classList.contains("crop-handle") || !customRect) return;
+          e.preventDefault();
+          customDragMode = "move";
+          customDragStart = pointToFraction(e.clientX, e.clientY);
+          customRectStart = { ...customRect };
+          return;
+        }
+        e.preventDefault();
+        draggingCrop = true;
+      }
+
+      function onCropOverlayDown(e) {
+        if (selectedAspect !== "custom" || e.target !== cropOverlay) return;
+        e.preventDefault();
+        customDragMode = "draw";
+        customDragStart = pointToFraction(e.clientX, e.clientY);
+        customRect = { x: customDragStart.x, y: customDragStart.y, w: 0, h: 0 };
+        updateCropBox();
+      }
+
+      function onWindowPointerMove(e) {
+        if (customDragMode) {
+          const cur = pointToFraction(e.clientX, e.clientY);
+          if (customDragMode === "draw") {
+            customRect = { x: Math.min(customDragStart.x, cur.x), y: Math.min(customDragStart.y, cur.y), w: Math.abs(cur.x - customDragStart.x), h: Math.abs(cur.y - customDragStart.y) };
+          } else if (customDragMode === "move") {
+            const dx = cur.x - customDragStart.x, dy = cur.y - customDragStart.y;
+            customRect = {
+              x: Math.max(0, Math.min(1 - customRectStart.w, customRectStart.x + dx)),
+              y: Math.max(0, Math.min(1 - customRectStart.h, customRectStart.y + dy)),
+              w: customRectStart.w, h: customRectStart.h,
+            };
+          } else if (customDragMode === "resize") {
+            customRect = resizeCustomRect(customRectStart, customHandle, cur);
+          }
+          updateCropBox();
+        }
+        if (draggingCrop && cropAxis) {
+          const rect = videoEl.getBoundingClientRect();
+          const boxW = cropBox.offsetWidth, boxH = cropBox.offsetHeight;
+          if (cropAxis === "x") {
+            const maxOffset = rect.width - boxW;
+            const x = Math.max(0, Math.min(maxOffset, e.clientX - rect.left - boxW / 2));
+            aspectPos = maxOffset > 0 ? x / maxOffset : 0.5;
+          } else {
+            const maxOffset = rect.height - boxH;
+            const y = Math.max(0, Math.min(maxOffset, e.clientY - rect.top - boxH / 2));
+            aspectPos = maxOffset > 0 ? y / maxOffset : 0.5;
+          }
+          updateCropBox();
+        }
+      }
+
+      function onWindowPointerUp() {
+        if (customDragMode === "draw" && customRect && (customRect.w < MIN_CUSTOM || customRect.h < MIN_CUSTOM)) {
+          customRect = null;
+          updateCropBox();
+        }
+        customDragMode = null;
+        customHandle = null;
+        draggingCrop = false;
+      }
+
+      cropBox.addEventListener("pointerdown", onCropBoxDown);
+      cropBox.querySelectorAll(".crop-handle").forEach((handle) => {
+        handle.addEventListener("pointerdown", (e) => {
+          if (selectedAspect !== "custom" || !customRect) return;
+          e.preventDefault();
+          e.stopPropagation();
+          customDragMode = "resize";
+          customHandle = handle.dataset.handle;
+          customDragStart = pointToFraction(e.clientX, e.clientY);
+          customRectStart = { ...customRect };
+        });
+      });
+      cropOverlay.addEventListener("pointerdown", onCropOverlayDown);
+      window.addEventListener("pointermove", onWindowPointerMove);
+      window.addEventListener("pointerup", onWindowPointerUp);
+      this._cleanupCrop = () => {
+        cropBox.removeEventListener("pointerdown", onCropBoxDown);
+        cropOverlay.removeEventListener("pointerdown", onCropOverlayDown);
+        window.removeEventListener("pointermove", onWindowPointerMove);
+        window.removeEventListener("pointerup", onWindowPointerUp);
+        cropOverlay.hidden = true;
+        videoEl.style.transform = "";
+      };
+
+      container.querySelectorAll('[data-aspect]').forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedAspect = btn.dataset.aspect;
+          container.querySelectorAll('[data-aspect]').forEach((b) => b.classList.toggle("active", b === btn));
+          aspectPos = 0.5;
+          if (selectedAspect === "custom" && !customRect) customRect = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+          updateCropBox();
+        });
+      });
+
+      globalPanel.querySelectorAll("[data-action]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = globalActions.indexOf(btn.dataset.action);
+          if (idx >= 0) globalActions.splice(idx, 1); else globalActions.push(btn.dataset.action);
+          btn.classList.toggle("active");
+          applyPreviewTransform(globalActions);
+        });
+      });
+
+      document.getElementById("orientSegmentActions").querySelectorAll("[data-action]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = currentSegmentActions.indexOf(btn.dataset.action);
+          if (idx >= 0) currentSegmentActions.splice(idx, 1); else currentSegmentActions.push(btn.dataset.action);
+          btn.classList.toggle("active");
+          applyPreviewTransform(currentSegmentActions);
+        });
+      });
+
+      container.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          mode = btn.dataset.mode;
+          container.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+          globalPanel.hidden = mode !== "global";
+          segmentsPanel.hidden = mode !== "segments";
+          videoEl.style.transform = "";
+          document.getElementById("aspectSectionTitle").textContent =
+            mode === "global" ? "Format d'affichage (résultat final)" : "Format d'affichage de ce morceau";
+          if (mode === "segments" && !trackEls) {
+            trackEls = initTrack(segmentsPanel);
+            renderOrientSegments();
+          }
+        });
+      });
+
+      function renderOrientSegments() {
+        const list = document.getElementById("orientSegmentsList");
+        if (!list) return;
+        if (track.segments.length === 0) {
+          list.innerHTML = `<div class="segments-empty">Aucun morceau ajouté.</div>`;
+          return;
+        }
+        list.innerHTML = track.segments.map((seg, i) => {
+          const tags = seg.actions.map((a) => ACTION_LABELS[a]);
+          if (seg.aspectRatio) tags.push(ASPECT_LABELS[seg.aspectRatio]);
+          return `
+          <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
+            <span>
+              <span class="segment-label">${i + 1}. ${secondsToTimestamp(seg.start)} → ${secondsToTimestamp(seg.end)}</span>
+              <span class="segment-speed-tag">${tags.join(" + ") || "aucun changement"}</span>
+            </span>
+            <button type="button" class="segment-remove" data-index="${i}" title="Retirer">✕</button>
+          </div>`;
+        }).join("");
+        list.querySelectorAll(".segment-item").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            if (e.target.closest(".segment-remove")) return;
+            const seg = track.segments[Number(el.dataset.index)];
+            applyPreviewTransform(seg.actions);
+            playRanges(videoEl, [seg]);
+          });
+        });
+        list.querySelectorAll(".segment-remove").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            track.segments.splice(Number(btn.dataset.index), 1);
+            renderOrientSegments();
+            if (trackEls) renderTrackMarkers(trackEls);
+          });
+        });
+      }
+
+      document.getElementById("orientPreviewBtn")?.addEventListener("click", () => {
+        applyPreviewTransform(currentSegmentActions);
+        playRanges(videoEl, [{ start: track.start, end: track.end }]);
+      });
+
+      document.getElementById("orientAddSegmentBtn")?.addEventListener("click", () => {
+        if (currentSegmentActions.length === 0 && !hasAspectWork()) {
+          statusEl.textContent = "Choisissez au moins une orientation ou un format pour ce morceau.";
+          statusEl.className = "status error";
+          return;
+        }
+        const addedEnd = track.end;
+        track.segments.push({
+          start: track.start, end: track.end, actions: [...currentSegmentActions],
+          aspectRatio: selectedAspect || null, aspectPos, cropRect: selectedAspect === "custom" ? customRect : null,
+        });
+        track.segments.sort((a, b) => a.start - b.start);
+        renderOrientSegments();
+        updateTrackUI(trackEls);
+        if (addedEnd < track.duration - MIN_GAP) {
+          track.start = addedEnd;
+          track.end = track.duration;
+          videoEl.currentTime = track.start;
+          updateTrackUI(trackEls);
+        }
+      });
+
+      track = { duration: activeDuration(), start: 0, end: activeDuration(), segments: [], dragging: null };
+      this._getState = () => ({ mode, selectedAspect, aspectPos, customRect, globalActions, hasAspectWork });
+    },
+    collect() {
+      const { mode, selectedAspect, aspectPos, customRect, globalActions, hasAspectWork } = this._getState();
+      if (mode === "segments") {
+        if (!track.segments.length) throw new Error("Ajoutez au moins un morceau.");
+        return {
+          mode: "segments",
+          segments: track.segments.map((s) => ({
+            start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end), actions: s.actions,
+            aspect_ratio: s.aspectRatio === "custom" ? null : s.aspectRatio,
+            aspect_position: s.aspectPos,
+            crop_rect: s.aspectRatio === "custom" ? s.cropRect : null,
+          })),
+        };
+      }
+      if (globalActions.length === 0 && !hasAspectWork()) throw new Error("Choisissez au moins une orientation ou un format d'affichage.");
+      const params = { mode: "single", actions: globalActions };
+      if (selectedAspect === "custom" && customRect) {
+        params.crop_rect = customRect;
+      } else if (selectedAspect) {
+        params.aspect_ratio = selectedAspect;
+        params.aspect_position = aspectPos;
+      }
+      return params;
+    },
+    cleanup() {
+      if (this._cleanupCrop) this._cleanupCrop();
+    },
+  };
+
+  const CUSTOM_PANELS = { trim: TrimPanel, speed: SpeedPanel, orientation: OrientationPanel };
+  let activeCustomPanel = null;
+
+  /* ===================== Barre d'onglets + panneau d'action ===================== */
+
   function renderTabs() {
     tabsEl.innerHTML = STUDIO_ACTIONS.map((a) => `
       <button type="button" class="studio-action-tab${a.type === selectedType ? " active" : ""}" data-type="${a.type}">
@@ -1041,20 +1283,32 @@ const FORMS = {
   }
 
   function selectAction(type) {
+    if (activeCustomPanel && activeCustomPanel.cleanup) activeCustomPanel.cleanup();
+    activeCustomPanel = null;
     selectedType = type;
     renderTabs();
-    const form = FORMS[type];
+
     const label = destination === "add" ? "Ajouter à la timeline" : "Remplacer le contenu actif";
-    panelEl.innerHTML = `
-      <h3>${STUDIO_ACTIONS.find((a) => a.type === type).label}</h3>
+    const destinationHtml = `
       <div class="studio-destination-toggle">
         <button type="button" class="studio-destination-btn${destination === "replace" ? " active" : ""}" data-dest="replace">Remplacer le contenu actif</button>
         <button type="button" class="studio-destination-btn${destination === "add" ? " active" : ""}" data-dest="add">Ajouter à la timeline</button>
-      </div>
-      ${form.html({})}
+      </div>`;
+
+    panelEl.innerHTML = `<h3>${STUDIO_ACTIONS.find((a) => a.type === type).label}</h3>${destinationHtml}<div id="actionBody"></div>
       <div class="studio-panel-actions">
         <button type="button" class="btn-primary" id="applyActionBtn">${label}</button>
       </div>`;
+
+    const body = document.getElementById("actionBody");
+    if (CUSTOM_PANELS[type]) {
+      activeCustomPanel = CUSTOM_PANELS[type];
+      activeCustomPanel.render(body);
+    } else {
+      body.innerHTML = FORMS[type].html({});
+      if (FORMS[type].init) FORMS[type].init();
+    }
+
     panelEl.querySelectorAll("[data-dest]").forEach((btn) => {
       btn.addEventListener("click", () => { destination = btn.dataset.dest; selectAction(type); });
     });
@@ -1066,7 +1320,15 @@ const FORMS = {
     const activeClip = timeline[activeIndex];
     if (!activeClip.id) { statusEl.textContent = "Le fichier est encore en cours d'import…"; statusEl.className = "status"; return; }
 
-    const params = FORMS[selectedType].collect();
+    let params;
+    try {
+      params = CUSTOM_PANELS[selectedType] ? CUSTOM_PANELS[selectedType].collect() : FORMS[selectedType].collect();
+    } catch (e) {
+      statusEl.textContent = e.message;
+      statusEl.className = "status error";
+      return;
+    }
+
     const chainPayload = [{ type: selectedType, enabled: true, params }];
     const formData = new FormData();
     formData.append("project_id", activeClip.id);
@@ -1124,6 +1386,8 @@ const FORMS = {
       }))
       .catch(() => { overlay.hidden = true; });
   }
+
+  /* ===================== Export final (assemble la timeline) ===================== */
 
   function runExport() {
     if (timeline.length === 0 || timeline.some((c) => !c.id)) return;
