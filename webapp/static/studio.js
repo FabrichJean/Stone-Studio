@@ -342,6 +342,29 @@ const FORMS = {
 
   function toggleTransportPlay() {
     if (transportPlaying) pauseTransport(); else playTransport();
+  }
+
+  transportPlayBtn.addEventListener("click", toggleTransportPlay);
+  transportStartBtn.addEventListener("click", () => { pauseTransport(); seekTo(0); });
+  transportEndBtn.addEventListener("click", () => { pauseTransport(); seekTo(totalTimelineDuration()); });
+
+  function scrubToClientX(clientX) {
+    const rect = timelineTrack.getBoundingClientRect();
+    const t = (clientX - rect.left) / PX_PER_SEC;
+    seekTo(t);
+  }
+
+  timelineScroll.addEventListener("pointerdown", (e) => {
+    if (timeline.length === 0 || e.target.closest(".studio-clip-remove")) return;
+    scrubbing = true;
+    if (transportPlaying) pauseTransport();
+    scrubToClientX(e.clientX);
+  });
+  window.addEventListener("pointermove", (e) => { if (scrubbing) scrubToClientX(e.clientX); });
+  window.addEventListener("pointerup", () => { scrubbing = false; });
+
+  /* ===================== Upload / dropzone / import ===================== */
+
   dropzone.addEventListener("click", () => fileInput.click());
   browseLink.addEventListener("click", (e) => { e.stopPropagation(); fileInput.click(); });
   pickProjectLink.addEventListener("click", (e) => { e.stopPropagation(); openProjectPicker(handleFile); });
@@ -360,8 +383,11 @@ const FORMS = {
   exportBtn.addEventListener("click", runExport);
 
   function resetStudio() {
+    if (transportPlaying) pauseTransport();
     timeline = [];
     activeIndex = -1;
+    playingIndex = -1;
+    playheadTime = 0;
     destination = "replace";
     selectedType = STUDIO_ACTIONS[0].type;
     videoEl.src = ""; audioEl.src = "";
@@ -392,8 +418,11 @@ const FORMS = {
     timeline = [{ id: null, name: file.name, mediaType, size: file.size, duration: null, hasFilmstrip: false, localUrl }];
     activeIndex = 0;
     setActiveClip(0);
-    selectAction(selectedType);
     renderTimeline();
+
+    // Le panneau actif a pu être construit avec une durée de 0 (métadonnées pas encore
+    // chargées) : on le reconstruit dès que la vraie durée est connue.
+    const refreshPanelIfCustom = () => { if (CUSTOM_PANELS[selectedType] && activeIndex === 0) selectAction(selectedType); };
 
     const mediaEl = mediaType === "audio" ? audioEl : videoEl;
     mediaEl.addEventListener("loadedmetadata", function onMeta() {
@@ -401,6 +430,7 @@ const FORMS = {
       if (timeline[0] && timeline[0].duration === null) {
         timeline[0].duration = mediaEl.duration;
         renderTimeline();
+        refreshPanelIfCustom();
       }
     });
 
@@ -420,6 +450,7 @@ const FORMS = {
   }
 
   function setActiveClip(index) {
+    if (transportPlaying) pauseTransport();
     activeIndex = index;
     const clip = timeline[index];
     if (!clip) return;
@@ -431,8 +462,14 @@ const FORMS = {
       videoEl.src = src; videoEl.hidden = false;
       audioEl.hidden = true; audioEl.src = "";
     }
+    videoEl.style.transform = "";
+    playingIndex = index;
+    playheadTime = clipStartTime(index);
     renderTimeline();
+    selectAction(selectedType);
   }
+
+  /* ===================== Timeline (piste de montage) ===================== */
 
   function clipWidth(clip) {
     return Math.max(MIN_CLIP_PX, Math.round((clip.duration || 3) * PX_PER_SEC));
@@ -483,6 +520,7 @@ const FORMS = {
       timelineTrack.appendChild(block);
     });
     exportBtn.disabled = timeline.length === 0 || timeline.some((c) => c.pending);
+    updatePlayheadUI();
   }
 
   function removeClip(index) {
@@ -491,6 +529,237 @@ const FORMS = {
     setActiveClip(Math.min(activeIndex, timeline.length - 1));
   }
 
+  /* ===================== Piste de découpage partagée (Découpage / Vitesse / Transformation) =====================
+     Un même moteur de piste (poignées de début/fin, tête de lecture, liste de morceaux) est
+     réutilisé par les trois outils qui en ont besoin — seul le contenu de chaque "morceau"
+     diffère (facteur de vitesse, actions de rotation, etc.). */
+
+  let track = null; // { duration, start, end, segments: [...] , dragging }
+  let trackPointerMoveHandler = null;
+  let trackPointerUpHandler = null;
+  let trackPlayheadHandler = null;
+  let previewStopHandler = null;
+
+  function initTrack(container) {
+    const duration = activeDuration();
+    track = { duration, start: 0, end: duration, segments: [], dragging: null };
+
+    const els = {
+      track: container.querySelector(".trim-track"),
+      range: container.querySelector(".trim-range"),
+      markers: container.querySelector(".segment-markers"),
+      playhead: container.querySelector(".playhead"),
+      handleStart: container.querySelector(".trim-handle-start"),
+      handleEnd: container.querySelector(".trim-handle-end"),
+      startLabel: container.querySelector(".trim-start-label"),
+      endLabel: container.querySelector(".trim-end-label"),
+      durationLabel: container.querySelector(".trim-duration-label"),
+    };
+
+    function positionToTime(clientX) {
+      const rect = els.track.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      return ratio * track.duration;
+    }
+
+    if (trackPointerMoveHandler) window.removeEventListener("pointermove", trackPointerMoveHandler);
+    if (trackPointerUpHandler) window.removeEventListener("pointerup", trackPointerUpHandler);
+
+    trackPointerMoveHandler = (e) => {
+      if (!track || !track.dragging || !track.duration) return;
+      const t = positionToTime(e.clientX);
+      if (track.dragging === "start") {
+        track.start = Math.max(0, Math.min(t, track.end - MIN_GAP));
+      } else {
+        track.end = Math.min(track.duration, Math.max(t, track.start + MIN_GAP));
+      }
+      activeMediaEl().currentTime = track.dragging === "start" ? track.start : track.end;
+      updateTrackUI(els);
+    };
+    trackPointerUpHandler = () => { if (track) track.dragging = null; };
+    window.addEventListener("pointermove", trackPointerMoveHandler);
+    window.addEventListener("pointerup", trackPointerUpHandler);
+
+    els.handleStart.addEventListener("pointerdown", (e) => { e.preventDefault(); track.dragging = "start"; });
+    els.handleEnd.addEventListener("pointerdown", (e) => { e.preventDefault(); track.dragging = "end"; });
+    els.track.addEventListener("pointerdown", (e) => {
+      if (e.target === els.handleStart || e.target === els.handleEnd || !track.duration) return;
+      const t = positionToTime(e.clientX);
+      if (Math.abs(t - track.start) <= Math.abs(t - track.end)) {
+        track.start = Math.min(t, track.end - MIN_GAP);
+        track.dragging = "start";
+      } else {
+        track.end = Math.max(t, track.start + MIN_GAP);
+        track.dragging = "end";
+      }
+      activeMediaEl().currentTime = track.dragging === "start" ? track.start : track.end;
+      updateTrackUI(els);
+    });
+
+    if (trackPlayheadHandler) {
+      videoEl.removeEventListener("timeupdate", trackPlayheadHandler);
+      audioEl.removeEventListener("timeupdate", trackPlayheadHandler);
+    }
+    trackPlayheadHandler = () => {
+      if (!track || !track.duration || !els.playhead.isConnected) return;
+      const media = activeMediaEl();
+      els.playhead.style.left = `${(media.currentTime / track.duration) * 100}%`;
+    };
+    videoEl.addEventListener("timeupdate", trackPlayheadHandler);
+    audioEl.addEventListener("timeupdate", trackPlayheadHandler);
+
+    updateTrackUI(els);
+    return els;
+  }
+
+  function updateTrackUI(els) {
+    if (!track.duration) return;
+    const startPct = (track.start / track.duration) * 100;
+    const endPct = (track.end / track.duration) * 100;
+    els.handleStart.style.left = `${startPct}%`;
+    els.handleEnd.style.left = `${endPct}%`;
+    els.range.style.left = `${startPct}%`;
+    els.range.style.right = `${100 - endPct}%`;
+    els.startLabel.textContent = secondsToTimestamp(track.start);
+    els.endLabel.textContent = secondsToTimestamp(track.end);
+    els.durationLabel.textContent = `durée : ${secondsToTimestamp(track.end - track.start)}`;
+    renderTrackMarkers(els);
+  }
+
+  function renderTrackMarkers(els) {
+    els.markers.innerHTML = "";
+    track.segments.forEach((seg) => {
+      const marker = document.createElement("div");
+      marker.className = "segment-marker";
+      marker.style.left = `${(seg.start / track.duration) * 100}%`;
+      marker.style.width = `${((seg.end - seg.start) / track.duration) * 100}%`;
+      els.markers.appendChild(marker);
+    });
+  }
+
+  function playRanges(media, ranges, onSegment) {
+    if (!ranges.length) return;
+    if (previewStopHandler) { media.removeEventListener("timeupdate", previewStopHandler); previewStopHandler = null; }
+    let i = 0;
+    media.currentTime = ranges[0].start;
+    if (onSegment) onSegment(ranges[0]);
+    media.play();
+    previewStopHandler = () => {
+      if (media.currentTime < ranges[i].end) return;
+      i += 1;
+      if (i >= ranges.length) {
+        media.pause();
+        media.removeEventListener("timeupdate", previewStopHandler);
+        previewStopHandler = null;
+        return;
+      }
+      media.currentTime = ranges[i].start;
+      if (onSegment) onSegment(ranges[i]);
+    };
+    media.addEventListener("timeupdate", previewStopHandler);
+  }
+
+  function trimTrackHtml() {
+    return `
+      <div class="trim-times">
+        <span class="trim-start-label">00:00:00</span>
+        <span class="trim-duration-label trim-duration"></span>
+        <span class="trim-end-label">00:00:00</span>
+      </div>
+      <div class="trim-track">
+        <div class="trim-range"></div>
+        <div class="segment-markers"></div>
+        <div class="playhead"></div>
+        <div class="trim-handle trim-handle-start" tabindex="0"></div>
+        <div class="trim-handle trim-handle-end" tabindex="0"></div>
+      </div>`;
+  }
+
+  /* ===================== Panneau Découpage ===================== */
+
+  const TrimPanel = {
+    render(container) {
+      container.innerHTML = `
+        ${trimTrackHtml()}
+        <div class="btn-row">
+          <button type="button" class="btn-secondary" id="trimPreviewBtn">Prévisualiser</button>
+          <button type="button" class="btn-secondary" id="trimAddSegmentBtn">Ajouter ce morceau</button>
+        </div>
+        <div class="segments-list" id="trimSegmentsList"></div>`;
+
+      const trackEls = initTrack(container);
+      renderTrimSegments();
+
+      document.getElementById("trimPreviewBtn").addEventListener("click", () => {
+        playRanges(activeMediaEl(), track.segments.length > 0 ? track.segments : [{ start: track.start, end: track.end }]);
+      });
+
+      document.getElementById("trimAddSegmentBtn").addEventListener("click", () => {
+        const addedEnd = track.end;
+        track.segments.push({ start: track.start, end: track.end });
+        track.segments.sort((a, b) => a.start - b.start);
+        renderTrimSegments();
+        updateTrackUI(trackEls);
+        if (addedEnd < track.duration - MIN_GAP) {
+          track.start = addedEnd;
+          track.end = track.duration;
+          activeMediaEl().currentTime = track.start;
+          updateTrackUI(trackEls);
+        }
+      });
+
+      function renderTrimSegments() {
+        const list = document.getElementById("trimSegmentsList");
+        if (!list) return;
+        if (track.segments.length === 0) {
+          list.innerHTML = `<div class="segments-empty">Aucun morceau ajouté — l'action utilisera la sélection en cours.</div>`;
+          return;
+        }
+        list.innerHTML = track.segments.map((seg, i) => `
+          <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
+            <span>
+              <span class="segment-label">${i + 1}. ${secondsToTimestamp(seg.start)} → ${secondsToTimestamp(seg.end)}</span>
+              <span class="segment-duration">(${secondsToTimestamp(seg.end - seg.start)})</span>
+            </span>
+            <button type="button" class="segment-remove" data-index="${i}" title="Retirer">✕</button>
+          </div>`).join("");
+        list.querySelectorAll(".segment-item").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            if (e.target.closest(".segment-remove")) return;
+            playRanges(activeMediaEl(), [track.segments[Number(el.dataset.index)]]);
+          });
+        });
+        list.querySelectorAll(".segment-remove").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            track.segments.splice(Number(btn.dataset.index), 1);
+            renderTrimSegments();
+            renderTrackMarkers(trackEls);
+          });
+        });
+      }
+    },
+    collect() {
+      if (track.segments.length > 0) {
+        return { mode: "segments", segments: track.segments.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end) })) };
+      }
+      return { mode: "single", start: secondsToTimestamp(track.start), end: secondsToTimestamp(track.end) };
+    },
+  };
+
+  /* ===================== Panneau Vitesse ===================== */
+
+  function speedFactorSelectHtml(id, selected) {
+    return `<select id="${id}">
+      ${SPEED_FACTORS.map((v) => `<option value="${v}" ${selected === v ? "selected" : ""}>${v}x${v === "1" ? " (normal)" : ""}</option>`).join("")}
+    </select>`;
+  }
+
+  const SpeedPanel = {
+    render(container) {
+      let mode = "global";
+      container.innerHTML = `
+        <div class="mode-toggle">
+          <button type="button" class="mode-toggle-btn active" data-mode="global">Vitesse globale</button>
   function renderTabs() {
     tabsEl.innerHTML = STUDIO_ACTIONS.map((a) => `
       <button type="button" class="studio-action-tab${a.type === selectedType ? " active" : ""}" data-type="${a.type}">
