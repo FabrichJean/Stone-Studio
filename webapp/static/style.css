@@ -869,6 +869,19 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   overflow-y: visible;
 }
 
+.studio-side-expanded .panel-crop-wrap video { max-height: 380px; }
+.studio-side-expanded #expandPanelBtn { display: none; }
+
+.studio-panel-modal-launcher {
+  max-width: 720px;
+  height: min(760px, 90vh);
+}
+
+.studio-panel-modal-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
 .studio-active-clip {
   display: flex;
   flex-direction: column;
