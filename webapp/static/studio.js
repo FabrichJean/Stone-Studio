@@ -800,7 +800,9 @@ const FORMS = {
       block.className = "studio-clip" + (i === activeIndex ? " active" : "") + (isAudio ? " studio-clip-audio" : "");
       block.style.width = `${clipWidth(clip)}px`;
       if (!isAudio && clip.hasFilmstrip) {
-        block.style.backgroundImage = `url(/api/projects/${clip.id}/filmstrip)`;
+        // L'id du projet peut contenir des espaces/parenthèses (dérivé du nom de fichier
+        // d'origine) : un url() CSS non guillemeté casse dès qu'il contient un espace.
+        block.style.backgroundImage = `url("/api/projects/${encodeURIComponent(clip.id)}/filmstrip")`;
       }
       block.innerHTML = `
         <span class="studio-clip-label">${clip.name}</span>
