@@ -856,6 +856,19 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   padding: 20px;
 }
 
+.studio-side-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+/* Panneau agrandi dans la modal : plus de largeur et un aperçu vidéo plus grand. */
+.studio-side.studio-side-expanded {
+  width: 100%;
+  padding: 0;
+  overflow-y: visible;
+}
+
 .studio-active-clip {
   display: flex;
   flex-direction: column;
