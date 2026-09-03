@@ -167,6 +167,13 @@ const FORMS = {
   const panelEl = document.getElementById("actionPanel");
   const activeClipBanner = document.getElementById("activeClipBanner");
   const activeClipNameEl = document.getElementById("activeClipName");
+  const panelReplaceBrowse = document.getElementById("panelReplaceBrowse");
+  const panelReplaceInput = document.getElementById("panelReplaceInput");
+  const panelReplaceProject = document.getElementById("panelReplaceProject");
+  const panelPickerModal = document.getElementById("panelProjectPickerModal");
+  const panelPickerList = document.getElementById("panelPickerList");
+  const panelPickerSearch = document.getElementById("panelPickerSearch");
+  const panelPickerClose = document.getElementById("panelPickerClose");
   const studioSide = document.getElementById("studioSide");
   const studioResizer = document.getElementById("studioResizer");
   const videoEl = document.getElementById("studioVideo");
@@ -237,16 +244,25 @@ const FORMS = {
   let selectedType = STUDIO_ACTIONS[0].type;
   let destination = "replace"; // "replace" | "add"
 
+  // Source que l'outil va réellement traiter : par défaut le clip actif de la timeline,
+  // mais "Remplacer le fichier" peut la remplacer par un autre fichier sans toucher à la
+  // timeline elle-même (le remplacement de la timeline ne se fait qu'en appliquant l'outil).
+  let stagedSource = null; // { id, name, mediaType, duration, hasFilmstrip, localUrl }
+
+  function toolInputClip() {
+    return stagedSource || timeline[activeIndex];
+  }
+
   // Élément média utilisé pendant la CONFIGURATION d'une action (piste de découpage,
   // recadrage, prévisualisation) : c'est celui du panneau de droite, pas l'aperçu
   // principal (qui reste dédié à la lecture globale de la timeline).
   function activeMediaEl() {
-    const clip = timeline[activeIndex];
+    const clip = toolInputClip();
     return clip && clip.mediaType === "audio" ? panelAudio : panelVideo;
   }
 
   function activeDuration() {
-    const clip = timeline[activeIndex];
+    const clip = toolInputClip();
     if (clip && clip.duration) return clip.duration;
     const media = activeMediaEl();
     return media && media.duration ? media.duration : 0;
@@ -436,6 +452,7 @@ const FORMS = {
     if (transportPlaying) pauseTransport();
     timeline = [];
     activeIndex = -1;
+    stagedSource = null;
     playingIndex = -1;
     playheadTime = 0;
     updateActiveClipBanner();
@@ -502,10 +519,10 @@ const FORMS = {
   }
 
   function updateActiveClipBanner() {
-    const clip = timeline[activeIndex];
+    const clip = toolInputClip();
     if (!clip) { activeClipBanner.hidden = true; return; }
     activeClipBanner.hidden = false;
-    activeClipNameEl.textContent = clip.name;
+    activeClipNameEl.textContent = clip.name + (stagedSource ? " (remplacement)" : "");
 
     const src = clip.localUrl || `/api/projects/${clip.id}/download`;
     if (clip.mediaType === "audio") {
@@ -521,6 +538,7 @@ const FORMS = {
   function setActiveClip(index) {
     if (transportPlaying) pauseTransport();
     activeIndex = index;
+    stagedSource = null;
     const clip = timeline[index];
     if (!clip) return;
     const src = clip.localUrl || `/api/projects/${clip.id}/download`;
@@ -539,6 +557,47 @@ const FORMS = {
     selectAction(selectedType);
   }
 
+  // Remplace la source que l'outil va traiter, SANS toucher au clip actif de la timeline
+  // (celui-ci n'est remplacé que si on applique ensuite l'outil avec "Remplacer le contenu
+  // actif") — utile pour essayer un outil sur un autre fichier sans reconstruire la timeline.
+  function replaceToolInput(file) {
+    if (activeIndex < 0) return;
+    const mediaType = file.type.startsWith("audio/") ? "audio" : "video";
+    const localUrl = URL.createObjectURL(file);
+    stagedSource = { id: null, name: file.name, mediaType, size: file.size, duration: null, hasFilmstrip: false, localUrl };
+    updateActiveClipBanner();
+    selectAction(selectedType);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    fetch("/api/studio/upload", { method: "POST", body: formData })
+      .then((r) => r.json())
+      .then((record) => {
+        if (!stagedSource || stagedSource.localUrl !== localUrl) return; // remplacé de nouveau entre-temps
+        stagedSource.id = record.id;
+        stagedSource.duration = record.duration;
+        stagedSource.hasFilmstrip = record.has_filmstrip;
+        stagedSource.mediaType = record.media_type;
+      })
+      .catch(() => { statusEl.textContent = "Erreur lors de l'import du fichier."; statusEl.className = "status error"; });
+  }
+
+  panelReplaceBrowse.addEventListener("click", () => panelReplaceInput.click());
+  panelReplaceInput.addEventListener("change", () => {
+    if (panelReplaceInput.files.length) replaceToolInput(panelReplaceInput.files[0]);
+    panelReplaceInput.value = "";
+  });
+  activeClipBanner.addEventListener("dragover", (e) => { e.preventDefault(); activeClipBanner.classList.add("dragover"); });
+  activeClipBanner.addEventListener("dragleave", () => activeClipBanner.classList.remove("dragover"));
+  activeClipBanner.addEventListener("drop", (e) => {
+    e.preventDefault();
+    activeClipBanner.classList.remove("dragover");
+    if (e.dataTransfer.files.length) replaceToolInput(e.dataTransfer.files[0]);
+  });
+
+  /* ===================== Choisir un projet existant comme remplacement ===================== */
+
+  let panelPickerProjects = [];
   /* ===================== Timeline (piste de montage) ===================== */
 
   function clipWidth(clip) {
