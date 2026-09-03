@@ -598,6 +598,65 @@ const FORMS = {
   /* ===================== Choisir un projet existant comme remplacement ===================== */
 
   let panelPickerProjects = [];
+
+  function openPanelPicker() {
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((projects) => {
+        panelPickerProjects = projects;
+        panelPickerSearch.value = "";
+        renderPanelPickerList("");
+        panelPickerModal.hidden = false;
+        void panelPickerModal.offsetWidth;
+        panelPickerModal.classList.add("open");
+        panelPickerSearch.focus();
+      })
+      .catch(() => alert("Impossible de charger les projets."));
+  }
+
+  function closePanelPicker() {
+    if (panelPickerModal.hidden) return;
+    panelPickerModal.classList.remove("open");
+    panelPickerModal.addEventListener("transitionend", function onEnd(e) {
+      if (e.target !== panelPickerModal) return;
+      panelPickerModal.removeEventListener("transitionend", onEnd);
+      panelPickerModal.hidden = true;
+    });
+  }
+
+  function renderPanelPickerList(filter) {
+    const q = filter.trim().toLowerCase();
+    const filtered = panelPickerProjects.filter((p) => p.output_name.toLowerCase().includes(q));
+    panelPickerList.innerHTML = filtered.length
+      ? filtered.map(pickerRowHtml).join("")
+      : `<div class="picker-empty">Aucun fichier trouvé.</div>`;
+
+    panelPickerList.querySelectorAll("[data-id]").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const record = panelPickerProjects.find((p) => p.id === el.dataset.id);
+        el.classList.add("picker-item-loading");
+        try {
+          const res = await fetch(`/api/projects/${record.id}/download`);
+          const blob = await res.blob();
+          const file = new File([blob], record.output_name, { type: blob.type });
+          closePanelPicker();
+          replaceToolInput(file);
+        } catch {
+          el.classList.remove("picker-item-loading");
+          alert("Erreur lors du chargement du fichier.");
+        }
+      });
+    });
+  }
+
+  panelReplaceProject.addEventListener("click", openPanelPicker);
+  panelPickerClose.addEventListener("click", closePanelPicker);
+  panelPickerSearch.addEventListener("input", () => renderPanelPickerList(panelPickerSearch.value));
+  panelPickerModal.addEventListener("click", (e) => { if (e.target === panelPickerModal) closePanelPicker(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !panelPickerModal.hidden) closePanelPicker();
+  });
+
   /* ===================== Timeline (piste de montage) ===================== */
 
   function clipWidth(clip) {
@@ -1455,7 +1514,7 @@ const FORMS = {
 
   function applyAction() {
     if (activeIndex < 0) return;
-    const activeClip = timeline[activeIndex];
+    const activeClip = toolInputClip();
     if (!activeClip.id) { statusEl.textContent = "Le fichier est encore en cours d'import…"; statusEl.className = "status"; return; }
 
     let params;
@@ -1488,6 +1547,8 @@ const FORMS = {
             id: job.project_id, name: job.output_name, mediaType: job.media_type,
             size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip,
           };
+          stagedSource = null;
+          updateActiveClipBanner();
           renderTimeline();
         }, (err) => {
           const idx = timeline.findIndex((c) => c.tempId === tempId);
