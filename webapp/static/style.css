@@ -476,10 +476,17 @@ h1, h2, h3, .serif {
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
 }
 
+.studio-preview .crop-wrap { max-width: 100%; }
+
 .studio-preview video {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   max-height: 46vh;
   display: block;
   background: #000;
@@ -579,13 +586,57 @@ h1, h2, h3, .serif {
   padding: 16px 18px 18px;
 }
 
-.studio-timeline-header h3 {
-  font-size: 14px;
-  font-weight: 600;
+.studio-timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
 }
 
+.studio-timeline-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.studio-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.transport-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.transport-btn:hover { background: var(--bg-light); }
+.transport-play.playing svg { display: none; }
+.transport-play.playing::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-left: 3px solid currentColor;
+  border-right: 3px solid currentColor;
+}
+
+.studio-transport-time {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
 .studio-timeline-scroll {
+  position: relative;
   overflow-x: auto;
   border-radius: 8px;
   background: var(--bg-light);
@@ -594,6 +645,30 @@ h1, h2, h3, .serif {
 }
 
 .studio-timeline-scroll::-webkit-scrollbar { display: none; }
+
+.studio-timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.studio-timeline-playhead[hidden] { display: none; }
+
+.studio-timeline-playhead::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 
 .studio-timeline-ruler {
   position: relative;
@@ -698,6 +773,26 @@ h1, h2, h3, .serif {
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 14px;
+}
+
+.studio-action-panel .orientation-grid {
+  grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+  gap: 6px;
+}
+
+.studio-action-panel .orientation-btn {
+  padding: 10px 4px;
+  font-size: 10.5px;
+  gap: 4px;
+}
+
+.studio-subheading {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
 }
 
 .studio-form-note {
@@ -996,7 +1091,8 @@ h1, h2, h3, .serif {
 }
 
 .params-grid select,
-.params-grid input[type="text"] {
+.params-grid input[type="text"],
+.params-grid input[type="number"] {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1006,7 +1102,10 @@ h1, h2, h3, .serif {
   font-family: inherit;
 }
 
+.params-grid input[type="number"]:disabled { color: var(--text-muted); background: var(--bg-light); }
+
 .params-grid input[type="text"]:focus,
+.params-grid input[type="number"]:focus,
 .params-grid select:focus {
   outline: none;
   border-color: var(--accent);
