@@ -216,8 +216,8 @@ const FORMS = {
   let playingIndex = -1; // index du clip actuellement chargé dans l'aperçu pour la lecture
   let playheadTime = 0; // position globale (secondes) sur l'ensemble de la timeline
   let transportPlaying = false;
-  let transportTickHandler = null;
   let transportEndedHandler = null;
+  let transportRafId = null;
   let scrubbing = false;
 
   function clipStartTime(index) {
@@ -271,21 +271,26 @@ const FORMS = {
 
   function detachTransportTracking() {
     [videoEl, audioEl].forEach((m) => {
-      if (transportTickHandler) m.removeEventListener("timeupdate", transportTickHandler);
       if (transportEndedHandler) m.removeEventListener("ended", transportEndedHandler);
     });
+    if (transportRafId !== null) { cancelAnimationFrame(transportRafId); transportRafId = null; }
+  }
+
+  // Le curseur avance à chaque frame (plutôt qu'à chaque événement "timeupdate", trop peu
+  // fréquent — quelques fois par seconde) pour un mouvement fluide pendant la lecture.
+  function tickPlayheadFrame(media) {
+    if (!transportPlaying) return;
+    playheadTime = clipStartTime(playingIndex) + media.currentTime;
+    updatePlayheadUI();
+    transportRafId = requestAnimationFrame(() => tickPlayheadFrame(media));
   }
 
   function attachTransportTracking(media) {
     detachTransportTracking();
     if (!media) return;
-    transportTickHandler = () => {
-      playheadTime = clipStartTime(playingIndex) + media.currentTime;
-      updatePlayheadUI();
-    };
     transportEndedHandler = () => advanceTransport();
-    media.addEventListener("timeupdate", transportTickHandler);
     media.addEventListener("ended", transportEndedHandler);
+    transportRafId = requestAnimationFrame(() => tickPlayheadFrame(media));
   }
 
   function advanceTransport() {
