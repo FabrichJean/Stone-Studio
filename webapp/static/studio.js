@@ -844,6 +844,26 @@ const FORMS = {
       block.addEventListener("dragstart", (e) => {
         dragSourceIndex = i;
         e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", "reorder");
+        block.classList.add("dragging-clip");
+      });
+      block.addEventListener("dragend", () => {
+        dragSourceIndex = null;
+        studioTimelinePanel.classList.remove("dragover");
+        timelineTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip", "drop-before", "drop-after"));
+      });
+      block.addEventListener("dragover", (e) => {
+        if (dragSourceIndex === null) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const before = e.clientX - block.getBoundingClientRect().left < block.offsetWidth / 2;
+        block.classList.toggle("drop-before", before);
+        block.classList.toggle("drop-after", !before);
+      });
+      block.addEventListener("dragleave", () => block.classList.remove("drop-before", "drop-after"));
+      block.addEventListener("drop", (e) => {
+        if (dragSourceIndex === null) return;
+        e.preventDefault();
       timelineTrack.appendChild(block);
     });
     exportBtn.disabled = timeline.length === 0 || timeline.some((c) => c.pending);
