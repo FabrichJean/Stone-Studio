@@ -98,6 +98,11 @@
           <div id="studioResizer" class="studio-resizer" title="Glisser pour redimensionner"></div>
 
           <div class="studio-side" id="studioSide">
+            <div class="studio-side-header">
+              <button type="button" class="transport-btn" id="expandPanelBtn" title="Agrandir le panneau">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg>
+              </button>
+            </div>
             <div id="activeClipBanner" class="studio-active-clip" hidden>
               <div class="studio-active-clip-label">L'action s'applique à</div>
               <div id="panelCropWrap" class="crop-wrap panel-crop-wrap">
@@ -122,6 +127,18 @@
             <div id="actionPanel" class="studio-action-panel"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div id="studioPanelModal" class="modal-overlay" hidden>
+      <div class="launcher studio-panel-modal-launcher">
+        <div class="launcher-header">
+          <span class="launcher-title">Édition</span>
+          <button type="button" class="modal-close" id="studioPanelModalClose">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+        <div id="studioPanelModalBody" class="studio-panel-modal-body"></div>
       </div>
     </div>
 
