@@ -245,6 +245,11 @@ const FORMS = {
 
     panelCollapseToggle.addEventListener("click", (e) => {
       e.stopPropagation();
+      collapsed = !collapsed;
+      studioSide.classList.toggle("studio-side-collapsed", collapsed);
+      studioResizer.classList.toggle("collapsed", collapsed);
+      panelCollapseToggle.title = collapsed ? "Étendre le panneau" : "Réduire le panneau";
+    });
   })();
 
   /* ===================== Panneau agrandi en modal ===================== */
