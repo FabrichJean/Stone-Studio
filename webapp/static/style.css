@@ -851,6 +851,35 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   display: flex;
   justify-content: center;
   background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.panel-crop-wrap video {
+  width: 100%;
+  max-height: 180px;
+  display: block;
+  background: #000;
+}
+
+.studio-active-clip audio {
+  width: 100%;
+  display: block;
+}
+
+.studio-active-clip audio[hidden],
+.panel-crop-wrap[hidden] { display: none; }
+
+.studio-active-clip-name {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .studio-action-panel h3 {
   font-size: 14px;
   font-weight: 600;
