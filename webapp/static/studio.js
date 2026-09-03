@@ -1054,38 +1054,38 @@ const FORMS = {
           const fitScale = Math.min(width / height, height / width);
           transform += ` scale(${fitScale})`;
         }
-        videoEl.style.transform = transform;
+        panelVideo.style.transform = transform;
       }
 
       function updateCropBox() {
         if (!selectedAspect) {
-          cropOverlay.hidden = true;
-          cropOverlay.classList.remove("drawable");
-          cropBox.classList.remove("resizable");
+          panelCropOverlay.hidden = true;
+          panelCropOverlay.classList.remove("drawable");
+          panelCropBox.classList.remove("resizable");
           aspectHint.hidden = true;
           customHint.hidden = true;
           return;
         }
         if (selectedAspect === "custom") {
-          cropOverlay.hidden = false;
-          cropOverlay.classList.add("drawable");
-          cropBox.classList.add("resizable");
+          panelCropOverlay.hidden = false;
+          panelCropOverlay.classList.add("drawable");
+          panelCropBox.classList.add("resizable");
           aspectHint.hidden = true;
           customHint.hidden = false;
-          if (!customRect) { cropBox.hidden = true; return; }
-          const w = videoEl.clientWidth, h = videoEl.clientHeight;
-          cropBox.hidden = false;
-          cropBox.style.left = `${customRect.x * w}px`;
-          cropBox.style.top = `${customRect.y * h}px`;
-          cropBox.style.width = `${customRect.w * w}px`;
-          cropBox.style.height = `${customRect.h * h}px`;
+          if (!customRect) { panelCropBox.hidden = true; return; }
+          const w = panelVideo.clientWidth, h = panelVideo.clientHeight;
+          panelCropBox.hidden = false;
+          panelCropBox.style.left = `${customRect.x * w}px`;
+          panelCropBox.style.top = `${customRect.y * h}px`;
+          panelCropBox.style.width = `${customRect.w * w}px`;
+          panelCropBox.style.height = `${customRect.h * h}px`;
           return;
         }
-        cropOverlay.classList.remove("drawable");
-        cropBox.classList.remove("resizable");
-        cropBox.hidden = false;
+        panelCropOverlay.classList.remove("drawable");
+        panelCropBox.classList.remove("resizable");
+        panelCropBox.hidden = false;
         customHint.hidden = true;
-        const w = videoEl.clientWidth, h = videoEl.clientHeight;
+        const w = panelVideo.clientWidth, h = panelVideo.clientHeight;
         if (!w || !h) return;
         const r = ASPECT_NUMERIC[selectedAspect];
         const videoAR = w / h;
@@ -1095,11 +1095,11 @@ const FORMS = {
         cropAxis = widthCrop ? "x" : "y";
         const maxOffset = widthCrop ? w - boxW : h - boxH;
         const offset = maxOffset * aspectPos;
-        cropBox.style.width = `${boxW}px`;
-        cropBox.style.height = `${boxH}px`;
-        cropBox.style.left = `${widthCrop ? offset : 0}px`;
-        cropBox.style.top = `${widthCrop ? 0 : offset}px`;
-        cropOverlay.hidden = false;
+        panelCropBox.style.width = `${boxW}px`;
+        panelCropBox.style.height = `${boxH}px`;
+        panelCropBox.style.left = `${widthCrop ? offset : 0}px`;
+        panelCropBox.style.top = `${widthCrop ? 0 : offset}px`;
+        panelCropOverlay.hidden = false;
         aspectHint.hidden = maxOffset < 1;
       }
 
@@ -1123,7 +1123,7 @@ const FORMS = {
       }
 
       function onCropOverlayDown(e) {
-        if (selectedAspect !== "custom" || e.target !== cropOverlay) return;
+        if (selectedAspect !== "custom" || e.target !== panelCropOverlay) return;
         e.preventDefault();
         customDragMode = "draw";
         customDragStart = pointToFraction(e.clientX, e.clientY);
@@ -1149,8 +1149,8 @@ const FORMS = {
           updateCropBox();
         }
         if (draggingCrop && cropAxis) {
-          const rect = videoEl.getBoundingClientRect();
-          const boxW = cropBox.offsetWidth, boxH = cropBox.offsetHeight;
+          const rect = panelVideo.getBoundingClientRect();
+          const boxW = panelCropBox.offsetWidth, boxH = panelCropBox.offsetHeight;
           if (cropAxis === "x") {
             const maxOffset = rect.width - boxW;
             const x = Math.max(0, Math.min(maxOffset, e.clientX - rect.left - boxW / 2));
@@ -1174,8 +1174,8 @@ const FORMS = {
         draggingCrop = false;
       }
 
-      cropBox.addEventListener("pointerdown", onCropBoxDown);
-      cropBox.querySelectorAll(".crop-handle").forEach((handle) => {
+      panelCropBox.addEventListener("pointerdown", onCropBoxDown);
+      panelCropBox.querySelectorAll(".crop-handle").forEach((handle) => {
         handle.addEventListener("pointerdown", (e) => {
           if (selectedAspect !== "custom" || !customRect) return;
           e.preventDefault();
@@ -1186,16 +1186,16 @@ const FORMS = {
           customRectStart = { ...customRect };
         });
       });
-      cropOverlay.addEventListener("pointerdown", onCropOverlayDown);
+      panelCropOverlay.addEventListener("pointerdown", onCropOverlayDown);
       window.addEventListener("pointermove", onWindowPointerMove);
       window.addEventListener("pointerup", onWindowPointerUp);
       this._cleanupCrop = () => {
-        cropBox.removeEventListener("pointerdown", onCropBoxDown);
-        cropOverlay.removeEventListener("pointerdown", onCropOverlayDown);
+        panelCropBox.removeEventListener("pointerdown", onCropBoxDown);
+        panelCropOverlay.removeEventListener("pointerdown", onCropOverlayDown);
         window.removeEventListener("pointermove", onWindowPointerMove);
         window.removeEventListener("pointerup", onWindowPointerUp);
-        cropOverlay.hidden = true;
-        videoEl.style.transform = "";
+        panelCropOverlay.hidden = true;
+        panelVideo.style.transform = "";
       };
 
       container.querySelectorAll('[data-aspect]').forEach((btn) => {
@@ -1232,7 +1232,7 @@ const FORMS = {
           container.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
           globalPanel.hidden = mode !== "global";
           segmentsPanel.hidden = mode !== "segments";
-          videoEl.style.transform = "";
+          panelVideo.style.transform = "";
           document.getElementById("aspectSectionTitle").textContent =
             mode === "global" ? "Format d'affichage (résultat final)" : "Format d'affichage de ce morceau";
           if (mode === "segments" && !trackEls) {
@@ -1266,7 +1266,7 @@ const FORMS = {
             if (e.target.closest(".segment-remove")) return;
             const seg = track.segments[Number(el.dataset.index)];
             applyPreviewTransform(seg.actions);
-            playRanges(videoEl, [seg]);
+            playRanges(panelVideo, [seg]);
           });
         });
         list.querySelectorAll(".segment-remove").forEach((btn) => {
@@ -1280,7 +1280,7 @@ const FORMS = {
 
       document.getElementById("orientPreviewBtn")?.addEventListener("click", () => {
         applyPreviewTransform(currentSegmentActions);
-        playRanges(videoEl, [{ start: track.start, end: track.end }]);
+        playRanges(panelVideo, [{ start: track.start, end: track.end }]);
       });
 
       document.getElementById("orientAddSegmentBtn")?.addEventListener("click", () => {
@@ -1300,7 +1300,7 @@ const FORMS = {
         if (addedEnd < track.duration - MIN_GAP) {
           track.start = addedEnd;
           track.end = track.duration;
-          videoEl.currentTime = track.start;
+          panelVideo.currentTime = track.start;
           updateTrackUI(trackEls);
         }
       });
