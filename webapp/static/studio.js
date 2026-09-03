@@ -481,7 +481,10 @@ const FORMS = {
   }
 
   timelineScroll.addEventListener("pointerdown", (e) => {
-    if (timeline.length === 0 || e.target.closest(".studio-clip-remove")) return;
+    // Un clic/glisser qui démarre sur un clip est géré par son propre pointerdown (sélection
+    // ou réordonnancement) — laisser le scrub de la tête de lecture s'en emparer aussi créait
+    // un conflit où le scrub gagnait systématiquement.
+    if (timeline.length === 0 || e.target.closest(".studio-clip")) return;
     scrubbing = true;
     if (transportPlaying) pauseTransport();
     scrubToClientX(e.clientX);
