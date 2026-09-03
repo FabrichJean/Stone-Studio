@@ -248,7 +248,11 @@ const FORMS = {
     const sidePlaceholder = document.createComment("studio-side-slot");
     studioSide.after(sidePlaceholder);
 
+    let savedInlineWidth = "";
+
     function expand() {
+      savedInlineWidth = studioSide.style.width; // fixée en px par le redimensionnement manuel
+      studioSide.style.width = ""; // sinon elle prime sur la règle CSS .studio-side-expanded
       studioPanelModalBody.appendChild(studioSide);
       studioSide.classList.add("studio-side-expanded");
       studioPanelModal.hidden = false;
@@ -265,6 +269,7 @@ const FORMS = {
         studioPanelModal.hidden = true;
         sidePlaceholder.parentNode.insertBefore(studioSide, sidePlaceholder);
         studioSide.classList.remove("studio-side-expanded");
+        studioSide.style.width = savedInlineWidth;
       });
     }
 
