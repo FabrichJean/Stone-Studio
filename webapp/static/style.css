@@ -848,6 +848,22 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   background: var(--accent);
 }
 
+.panel-collapse-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
 .studio-side {
   width: 320px;
   flex-shrink: 0;
