@@ -165,6 +165,8 @@ const FORMS = {
   const exportBtn = document.getElementById("exportBtn");
   const tabsEl = document.getElementById("studioActionTabs");
   const panelEl = document.getElementById("actionPanel");
+  const studioSide = document.getElementById("studioSide");
+  const studioResizer = document.getElementById("studioResizer");
   const videoEl = document.getElementById("studioVideo");
   const audioEl = document.getElementById("studioAudio");
   const cropWrap = document.getElementById("studioCropWrap");
@@ -187,6 +189,23 @@ const FORMS = {
   const downloadBtn = document.getElementById("downloadBtn");
   const statusEl = document.getElementById("studioStatus");
 
+  /* ===================== Redimensionnement du panneau latéral ===================== */
+  (function initSidePanelResize() {
+    const STORAGE_KEY = "ss_studio_side_width";
+    const MIN_WIDTH = 260;
+    const MAX_WIDTH = 560;
+
+    const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+    if (saved && saved >= MIN_WIDTH && saved <= MAX_WIDTH) {
+      studioSide.style.width = `${saved}px`;
+    }
+
+    let resizing = false;
+
+    studioResizer.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      resizing = true;
+      studioResizer.classList.add("dragging");
   const PX_PER_SEC = 40;
   const MIN_CLIP_PX = 50;
 
