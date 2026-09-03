@@ -304,6 +304,7 @@ const FORMS = {
   // mais "Remplacer le fichier" peut la remplacer par un autre fichier sans toucher à la
   // timeline elle-même (le remplacement de la timeline ne se fait qu'en appliquant l'outil).
   let stagedSource = null; // { id, name, mediaType, duration, hasFilmstrip, localUrl }
+  let dragSourceIndex = null; // index du clip en cours de glisser-déposer dans la timeline
 
   function toolInputClip() {
     return stagedSource || timeline[activeIndex];
@@ -624,6 +625,18 @@ const FORMS = {
     updateActiveClipBanner();
     selectAction(selectedType);
 
+    // Le panneau (piste de découpage, etc.) vient d'être construit avec une durée de 0 : les
+    // métadonnées du nouveau fichier ne sont pas encore chargées à ce stade. On le reconstruit
+    // dès qu'elles le sont, sinon la sélection reste figée sur 00:00:00 → 00:00:00.
+    const mediaEl = mediaType === "audio" ? panelAudio : panelVideo;
+    mediaEl.addEventListener("loadedmetadata", function onMeta() {
+      mediaEl.removeEventListener("loadedmetadata", onMeta);
+      if (stagedSource && stagedSource.localUrl === localUrl && !stagedSource.duration) {
+        stagedSource.duration = mediaEl.duration;
+        if (CUSTOM_PANELS[selectedType]) selectAction(selectedType);
+      }
+    });
+
     const formData = new FormData();
     formData.append("file", file);
     fetch("/api/studio/upload", { method: "POST", body: formData })
@@ -824,6 +837,13 @@ const FORMS = {
         setActiveClip(i);
       });
       block.querySelector(".studio-clip-remove").addEventListener("click", () => removeClip(i));
+
+      // Glisser-déposer pour réordonner : distinct du dépôt d'un fichier externe (géré par
+      // studioTimelinePanel) — on ne réagit ici que si le glisser vient d'un clip de la piste.
+      block.draggable = true;
+      block.addEventListener("dragstart", (e) => {
+        dragSourceIndex = i;
+        e.dataTransfer.effectAllowed = "move";
       timelineTrack.appendChild(block);
     });
     exportBtn.disabled = timeline.length === 0 || timeline.some((c) => c.pending);
