@@ -187,6 +187,7 @@ const FORMS = {
   const overlayLabel = document.getElementById("previewOverlayLabel");
   const timelineTrack = document.getElementById("timelineTrack");
   const timelineRuler = document.getElementById("timelineRuler");
+  const studioTimelinePanel = document.getElementById("studioTimelinePanel");
   const timelinePlayhead = document.getElementById("timelinePlayhead");
   const timelineScroll = document.querySelector(".studio-timeline-scroll");
   const transportStartBtn = document.getElementById("transportStart");
@@ -607,6 +608,53 @@ const FORMS = {
       activeClipBanner.classList.remove("dragover");
       if (e.dataTransfer.files.length) replaceToolInput(e.dataTransfer.files[0]);
     });
+  });
+
+  /* ===================== Glisser-déposer un fichier directement dans la timeline ===================== */
+  // Contrairement au dépôt sur le panneau (qui ne remplace que l'entrée de l'outil), déposer
+  // un fichier sur la timeline l'ajoute comme nouveau clip à la suite, sans passer par un outil.
+
+  function addFileToTimeline(file) {
+    const mediaType = file.type.startsWith("audio/") ? "audio" : "video";
+    const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    timeline.push({ tempId, pending: true, mediaType, duration: null, name: file.name });
+    renderTimeline();
+
+    const formData = new FormData();
+    formData.append("file", file);
+    fetch("/api/studio/upload", { method: "POST", body: formData })
+      .then((r) => r.json())
+      .then((record) => {
+        const idx = timeline.findIndex((c) => c.tempId === tempId);
+        if (idx === -1) return;
+        timeline[idx] = {
+          id: record.id, name: record.output_name, mediaType: record.media_type,
+          size: record.output_size, duration: record.duration, hasFilmstrip: record.has_filmstrip,
+        };
+        renderTimeline();
+      })
+      .catch(() => {
+        const idx = timeline.findIndex((c) => c.tempId === tempId);
+        if (idx !== -1) { timeline.splice(idx, 1); renderTimeline(); }
+        statusEl.textContent = "Erreur lors de l'import du fichier.";
+        statusEl.className = "status error";
+      });
+  }
+
+  studioTimelinePanel.addEventListener("dragenter", (e) => { e.preventDefault(); });
+  studioTimelinePanel.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    studioTimelinePanel.classList.add("dragover");
+  });
+  studioTimelinePanel.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget && studioTimelinePanel.contains(e.relatedTarget)) return;
+    studioTimelinePanel.classList.remove("dragover");
+  });
+  studioTimelinePanel.addEventListener("drop", (e) => {
+    e.preventDefault();
+    studioTimelinePanel.classList.remove("dragover");
+    Array.from(e.dataTransfer.files).forEach(addFileToTimeline);
   });
 
   /* ===================== Choisir un projet existant comme remplacement ===================== */
