@@ -113,10 +113,28 @@
               </div>
               <audio id="panelAudio" controls hidden></audio>
               <div class="studio-active-clip-name" id="activeClipName">—</div>
+              <div class="studio-active-clip-actions">
+                <span class="link" id="panelReplaceBrowse">Remplacer le fichier</span>
+                <span class="link" id="panelReplaceProject">Choisir un projet</span>
+              </div>
+              <input id="panelReplaceInput" type="file" accept="video/*,audio/*" hidden />
             </div>
             <div id="actionPanel" class="studio-action-panel"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div id="panelProjectPickerModal" class="modal-overlay" hidden>
+      <div class="launcher panel-picker-launcher">
+        <div class="launcher-header">
+          <span class="launcher-title">Choisir un projet</span>
+          <button type="button" class="modal-close" id="panelPickerClose">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+        <input type="text" id="panelPickerSearch" placeholder="Rechercher un fichier..." autocomplete="off" />
+        <div id="panelPickerList" class="picker-inline-list"></div>
       </div>
     </div>
 {% endblock %}
