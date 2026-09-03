@@ -257,6 +257,25 @@ const FORMS = {
     }
 
     function collapse() {
+      if (studioPanelModal.hidden) return;
+      studioPanelModal.classList.remove("open");
+      studioPanelModal.addEventListener("transitionend", function onEnd(e) {
+        if (e.target !== studioPanelModal) return;
+        studioPanelModal.removeEventListener("transitionend", onEnd);
+        studioPanelModal.hidden = true;
+        sidePlaceholder.parentNode.insertBefore(studioSide, sidePlaceholder);
+        studioSide.classList.remove("studio-side-expanded");
+      });
+    }
+
+    expandPanelBtn.addEventListener("click", expand);
+    studioPanelModalClose.addEventListener("click", collapse);
+    studioPanelModal.addEventListener("click", (e) => { if (e.target === studioPanelModal) collapse(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !studioPanelModal.hidden) collapse();
+    });
+  })();
+
   const PX_PER_SEC = 40;
   const MIN_CLIP_PX = 50;
 
