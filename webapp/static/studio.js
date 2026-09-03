@@ -165,13 +165,17 @@ const FORMS = {
   const exportBtn = document.getElementById("exportBtn");
   const tabsEl = document.getElementById("studioActionTabs");
   const panelEl = document.getElementById("actionPanel");
+  const activeClipBanner = document.getElementById("activeClipBanner");
+  const activeClipNameEl = document.getElementById("activeClipName");
   const studioSide = document.getElementById("studioSide");
   const studioResizer = document.getElementById("studioResizer");
   const videoEl = document.getElementById("studioVideo");
   const audioEl = document.getElementById("studioAudio");
-  const cropWrap = document.getElementById("studioCropWrap");
-  const cropOverlay = document.getElementById("studioCropOverlay");
-  const cropBox = document.getElementById("studioCropBox");
+  const panelVideo = document.getElementById("panelVideo");
+  const panelAudio = document.getElementById("panelAudio");
+  const panelCropWrap = document.getElementById("panelCropWrap");
+  const panelCropOverlay = document.getElementById("panelCropOverlay");
+  const panelCropBox = document.getElementById("panelCropBox");
   const overlay = document.getElementById("previewOverlay");
   const overlayLabel = document.getElementById("previewOverlayLabel");
   const timelineTrack = document.getElementById("timelineTrack");
@@ -233,9 +237,12 @@ const FORMS = {
   let selectedType = STUDIO_ACTIONS[0].type;
   let destination = "replace"; // "replace" | "add"
 
+  // Élément média utilisé pendant la CONFIGURATION d'une action (piste de découpage,
+  // recadrage, prévisualisation) : c'est celui du panneau de droite, pas l'aperçu
+  // principal (qui reste dédié à la lecture globale de la timeline).
   function activeMediaEl() {
     const clip = timeline[activeIndex];
-    return clip && clip.mediaType === "audio" ? audioEl : videoEl;
+    return clip && clip.mediaType === "audio" ? panelAudio : panelVideo;
   }
 
   function activeDuration() {
@@ -431,9 +438,11 @@ const FORMS = {
     activeIndex = -1;
     playingIndex = -1;
     playheadTime = 0;
+    updateActiveClipBanner();
     destination = "replace";
     selectedType = STUDIO_ACTIONS[0].type;
     videoEl.src = ""; audioEl.src = "";
+    panelVideo.src = ""; panelAudio.src = "";
     exportDone.hidden = true;
     exportProgress.hidden = true;
     statusEl.textContent = "";
@@ -492,6 +501,23 @@ const FORMS = {
       .catch(() => { statusEl.textContent = "Erreur lors de l'import du fichier."; statusEl.className = "status error"; });
   }
 
+  function updateActiveClipBanner() {
+    const clip = timeline[activeIndex];
+    if (!clip) { activeClipBanner.hidden = true; return; }
+    activeClipBanner.hidden = false;
+    activeClipNameEl.textContent = clip.name;
+
+    const src = clip.localUrl || `/api/projects/${clip.id}/download`;
+    if (clip.mediaType === "audio") {
+      panelAudio.src = src; panelAudio.hidden = false;
+      panelCropWrap.hidden = true; panelVideo.src = "";
+    } else {
+      panelVideo.src = src; panelCropWrap.hidden = false;
+      panelAudio.hidden = true; panelAudio.src = "";
+    }
+    panelVideo.style.transform = "";
+  }
+
   function setActiveClip(index) {
     if (transportPlaying) pauseTransport();
     activeIndex = index;
@@ -508,6 +534,7 @@ const FORMS = {
     videoEl.style.transform = "";
     playingIndex = index;
     playheadTime = clipStartTime(index);
+    updateActiveClipBanner();
     renderTimeline();
     selectAction(selectedType);
   }
@@ -640,16 +667,16 @@ const FORMS = {
     });
 
     if (trackPlayheadHandler) {
-      videoEl.removeEventListener("timeupdate", trackPlayheadHandler);
-      audioEl.removeEventListener("timeupdate", trackPlayheadHandler);
+      panelVideo.removeEventListener("timeupdate", trackPlayheadHandler);
+      panelAudio.removeEventListener("timeupdate", trackPlayheadHandler);
     }
     trackPlayheadHandler = () => {
       if (!track || !track.duration || !els.playhead.isConnected) return;
       const media = activeMediaEl();
       els.playhead.style.left = `${(media.currentTime / track.duration) * 100}%`;
     };
-    videoEl.addEventListener("timeupdate", trackPlayheadHandler);
-    audioEl.addEventListener("timeupdate", trackPlayheadHandler);
+    panelVideo.addEventListener("timeupdate", trackPlayheadHandler);
+    panelAudio.addEventListener("timeupdate", trackPlayheadHandler);
 
     updateTrackUI(els);
     return els;
@@ -1005,7 +1032,7 @@ const FORMS = {
       function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
       function pointToFraction(clientX, clientY) {
-        const rect = videoEl.getBoundingClientRect();
+        const rect = panelVideo.getBoundingClientRect();
         return { x: clamp01((clientX - rect.left) / rect.width), y: clamp01((clientY - rect.top) / rect.height) };
       }
 
@@ -1020,10 +1047,10 @@ const FORMS = {
       }
 
       function applyPreviewTransform(actions) {
-        if (!actions || actions.length === 0) { videoEl.style.transform = ""; return; }
+        if (!actions || actions.length === 0) { panelVideo.style.transform = ""; return; }
         let transform = actions.map((a) => TRANSFORMS[a]).join(" ");
         if (actions.some((a) => ROTATE_90_ACTIONS.has(a))) {
-          const { width, height } = videoEl.getBoundingClientRect();
+          const { width, height } = panelVideo.getBoundingClientRect();
           const fitScale = Math.min(width / height, height / width);
           transform += ` scale(${fitScale})`;
         }
