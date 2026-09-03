@@ -184,6 +184,27 @@ def _probe_dimensions(path: Path) -> tuple[int, int]:
         return (1280, 720)
 
 
+def _has_audio_stream(path: Path) -> bool:
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "a",
+        "-show_entries", "stream=index", "-of", "csv=p=0", str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return bool(result.stdout.strip())
+
+
+def _probe_duration(path: Path) -> float:
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return float(result.stdout.strip())
+    except ValueError:
+        return 1.0
+
+
 def concat_clips(clip_paths: list[Path], workdir: Path, on_progress: ProgressCallback | None = None) -> Path:
     """Assemble plusieurs clips bout à bout (piste de montage) en un seul fichier final.
     Les clips vidéo sont mis à l'échelle sur les dimensions du premier avant d'être concaténés
@@ -212,9 +233,22 @@ def concat_clips(clip_paths: list[Path], workdir: Path, on_progress: ProgressCal
     filter_parts = []
     if all_video:
         target_w, target_h = _probe_dimensions(clip_paths[0])
-        for i in range(n):
+        # Un clip vidéo peut ne pas avoir de piste audio (ex : enregistrement d'écran sans
+        # micro) : le filtre concat exige pourtant le même nombre de flux sur chaque segment,
+        # donc on lui fournit une piste silencieuse synthétique de la bonne durée à la place.
+        next_input_index = n
+        for i, p in enumerate(clip_paths):
             filter_parts.append(f"[{i}:v]scale={target_w}:{target_h},setsar=1[v{i}]")
-            filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}]")
+            if _has_audio_stream(p):
+                filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}]")
+            else:
+                silent_idx = next_input_index
+                next_input_index += 1
+                cmd += [
+                    "-f", "lavfi", "-t", str(_probe_duration(p)),
+                    "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                ]
+                filter_parts.append(f"[{silent_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}]")
         streams = "".join(f"[v{i}][a{i}]" for i in range(n))
         filter_parts.append(f"{streams}concat=n={n}:v=1:a=1[outv][outa]")
         maps = ["-map", "[outv]", "-map", "[outa]"]
