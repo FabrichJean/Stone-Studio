@@ -855,13 +855,20 @@ const FORMS = {
           container.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
           globalPanel.hidden = mode !== "global";
           segmentsPanel.hidden = mode !== "segments";
-          activeMediaEl().playbackRate = 1;
+          activeMediaEl().playbackRate = mode === "global" ? parseFloat(document.getElementById("speedGlobalFactor").value) : 1;
           if (mode === "segments" && !trackEls) {
             trackEls = initTrack(segmentsPanel);
             renderSpeedSegments();
           }
         });
       });
+
+      // Le lecteur du panneau reflète immédiatement la vitesse choisie (utile en mode
+      // global : jouer le lecteur donne un vrai aperçu du rendu, pas seulement le chiffre).
+      document.getElementById("speedGlobalFactor").addEventListener("change", (e) => {
+        if (mode === "global") activeMediaEl().playbackRate = parseFloat(e.target.value);
+      });
+      activeMediaEl().playbackRate = parseFloat(document.getElementById("speedGlobalFactor").value);
 
       function renderSpeedSegments() {
         const list = document.getElementById("speedSegmentsList");
@@ -1355,6 +1362,8 @@ const FORMS = {
   function selectAction(type) {
     if (activeCustomPanel && activeCustomPanel.cleanup) activeCustomPanel.cleanup();
     activeCustomPanel = null;
+    panelVideo.playbackRate = 1;
+    panelAudio.playbackRate = 1;
     selectedType = type;
     renderTabs();
 
