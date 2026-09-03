@@ -864,6 +864,22 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   justify-content: center;
   cursor: pointer;
   z-index: 2;
+}
+
+.panel-collapse-toggle:hover { color: var(--text-dark); background: var(--bg-light); }
+.panel-collapse-toggle svg { transition: transform 0.18s ease; }
+
+.studio-resizer.collapsed .panel-collapse-toggle svg {
+  transform: rotate(180deg);
+}
+
+.studio-side.studio-side-collapsed {
+  width: 0 !important;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+}
+
 .studio-side {
   width: 320px;
   flex-shrink: 0;
