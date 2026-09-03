@@ -791,6 +791,14 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   position: absolute;
   top: 0;
   bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  z-index: 3;
+}
+
+.studio-clip.drop-before::before { left: 0; }
+.studio-clip.drop-after::after { right: 0; }
+
 .studio-clip-audio {
   background-color: #3a3630;
   background-image: repeating-linear-gradient(
