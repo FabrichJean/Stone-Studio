@@ -443,7 +443,7 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 28px;
+  padding: 10px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
@@ -456,9 +456,12 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   min-width: 0;
 }
 
+.studio-file-info .icon { align-self: center; }
+
 .studio-file-name {
   font-weight: 600;
   font-size: 14px;
+  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -467,6 +470,7 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 
 .studio-file-meta {
   font-size: 12px;
+  line-height: 1.25;
   color: var(--text-muted);
 }
 
@@ -480,7 +484,9 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 .studio-topbar-actions .btn-primary,
 .studio-topbar-actions .btn-secondary {
   width: auto;
-  padding: 8px 16px;
+  flex: none;
+  margin-top: 0;
+  padding: 7px 16px;
 }
 
 .studio-action-tabs {
