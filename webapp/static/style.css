@@ -783,6 +783,14 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 
 .studio-clip.active { outline: 2.5px solid var(--accent); outline-offset: -2.5px; z-index: 1; }
 
+.studio-clip.dragging-clip { opacity: 0.4; }
+
+.studio-clip.drop-before::before,
+.studio-clip.drop-after::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
 .studio-clip-audio {
   background-color: #3a3630;
   background-image: repeating-linear-gradient(
