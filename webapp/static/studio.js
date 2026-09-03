@@ -176,6 +176,10 @@ const FORMS = {
   const panelPickerClose = document.getElementById("panelPickerClose");
   const studioSide = document.getElementById("studioSide");
   const studioResizer = document.getElementById("studioResizer");
+  const expandPanelBtn = document.getElementById("expandPanelBtn");
+  const studioPanelModal = document.getElementById("studioPanelModal");
+  const studioPanelModalBody = document.getElementById("studioPanelModalBody");
+  const studioPanelModalClose = document.getElementById("studioPanelModalClose");
   const videoEl = document.getElementById("studioVideo");
   const audioEl = document.getElementById("studioAudio");
   const panelVideo = document.getElementById("panelVideo");
@@ -237,6 +241,22 @@ const FORMS = {
     });
   })();
 
+  /* ===================== Panneau agrandi en modal ===================== */
+  // Déplace le vrai nœud DOM #studioSide dans la modal (au lieu d'en reconstruire une copie) :
+  // tous les écouteurs déjà attachés (piste de découpage, recadrage...) restent valides.
+  (function initPanelExpand() {
+    const sidePlaceholder = document.createComment("studio-side-slot");
+    studioSide.after(sidePlaceholder);
+
+    function expand() {
+      studioPanelModalBody.appendChild(studioSide);
+      studioSide.classList.add("studio-side-expanded");
+      studioPanelModal.hidden = false;
+      void studioPanelModal.offsetWidth;
+      studioPanelModal.classList.add("open");
+    }
+
+    function collapse() {
   const PX_PER_SEC = 40;
   const MIN_CLIP_PX = 50;
 
