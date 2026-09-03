@@ -50,8 +50,18 @@
         <div class="studio-body">
           <div class="studio-center">
             <div class="studio-preview">
-              <video id="studioVideo" controls></video>
-              <audio id="studioAudio" controls hidden></audio>
+              <div id="studioCropWrap" class="crop-wrap">
+                <video id="studioVideo"></video>
+                <div id="studioCropOverlay" class="crop-overlay" hidden>
+                  <div id="studioCropBox" class="crop-box">
+                    <div class="crop-handle" data-handle="nw"></div>
+                    <div class="crop-handle" data-handle="ne"></div>
+                    <div class="crop-handle" data-handle="sw"></div>
+                    <div class="crop-handle" data-handle="se"></div>
+                  </div>
+                </div>
+              </div>
+              <audio id="studioAudio" hidden></audio>
               <div id="previewOverlay" class="studio-preview-overlay" hidden>
                 <div class="spinner"></div>
                 <span id="previewOverlayLabel">Traitement en cours…</span>
@@ -61,8 +71,21 @@
             <div class="studio-timeline">
               <div class="studio-timeline-header">
                 <h3>Timeline de montage</h3>
+                <div class="studio-transport">
+                  <button type="button" class="transport-btn" id="transportStart" title="Aller au début">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="3" width="1.6" height="10"/><path d="M13 3.2v9.6a.5.5 0 0 1-.77.42l-6.8-4.8a.5.5 0 0 1 0-.84l6.8-4.8a.5.5 0 0 1 .77.42z"/></svg>
+                  </button>
+                  <button type="button" class="transport-btn transport-play" id="transportPlay" title="Lecture">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.7v10.6a.5.5 0 0 0 .77.42l8.4-5.3a.5.5 0 0 0 0-.84l-8.4-5.3a.5.5 0 0 0-.77.42z"/></svg>
+                  </button>
+                  <button type="button" class="transport-btn" id="transportEnd" title="Aller à la fin">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="11.9" y="3" width="1.6" height="10"/><path d="M3 3.2v9.6a.5.5 0 0 0 .77.42l6.8-4.8a.5.5 0 0 0 0-.84l-6.8-4.8a.5.5 0 0 0-.77.42z"/></svg>
+                  </button>
+                  <span class="studio-transport-time" id="transportTime">00:00:00 / 00:00:00</span>
+                </div>
               </div>
               <div class="studio-timeline-scroll">
+                <div id="timelinePlayhead" class="studio-timeline-playhead" hidden></div>
                 <div id="timelineRuler" class="studio-timeline-ruler"></div>
                 <div id="timelineTrack" class="studio-timeline-track"></div>
               </div>
