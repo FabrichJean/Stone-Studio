@@ -176,6 +176,7 @@ const FORMS = {
   const panelPickerClose = document.getElementById("panelPickerClose");
   const studioSide = document.getElementById("studioSide");
   const studioResizer = document.getElementById("studioResizer");
+  const panelCollapseToggle = document.getElementById("panelCollapseToggle");
   const expandPanelBtn = document.getElementById("expandPanelBtn");
   const studioPanelModal = document.getElementById("studioPanelModal");
   const studioPanelModalBody = document.getElementById("studioPanelModalBody");
@@ -217,8 +218,10 @@ const FORMS = {
     }
 
     let resizing = false;
+    let collapsed = false;
 
     studioResizer.addEventListener("pointerdown", (e) => {
+      if (collapsed || e.target === panelCollapseToggle) return;
       e.preventDefault();
       resizing = true;
       studioResizer.classList.add("dragging");
@@ -239,6 +242,9 @@ const FORMS = {
       document.body.style.userSelect = "";
       localStorage.setItem(STORAGE_KEY, Math.round(parseFloat(studioSide.style.width)));
     });
+
+    panelCollapseToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
   })();
 
   /* ===================== Panneau agrandi en modal ===================== */
