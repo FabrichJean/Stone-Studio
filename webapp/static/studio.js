@@ -305,6 +305,9 @@ const FORMS = {
   // timeline elle-même (le remplacement de la timeline ne se fait qu'en appliquant l'outil).
   let stagedSource = null; // { id, name, mediaType, duration, hasFilmstrip, localUrl }
   let dragSourceIndex = null; // index du clip en cours de glisser-déposer dans la timeline
+  let dragStartX = null;
+  let dragStartY = null;
+  let dragEngaged = false; // ne devient true qu'une fois le seuil de déplacement franchi
 
   function toolInputClip() {
     return stagedSource || timeline[activeIndex];
@@ -838,35 +841,17 @@ const FORMS = {
       });
       block.querySelector(".studio-clip-remove").addEventListener("click", () => removeClip(i));
 
-      // Glisser-déposer pour réordonner : distinct du dépôt d'un fichier externe (géré par
-      // studioTimelinePanel) — on ne réagit ici que si le glisser vient d'un clip de la piste.
-      block.draggable = true;
-      block.addEventListener("dragstart", (e) => {
+      // Réordonnancement au pointeur plutôt qu'au drag-and-drop natif HTML5 : ce dernier
+      // exige que le navigateur considère explicitement le drop comme "accepté" sur chaque
+      // cible, et rejoue sinon une animation de "retour à la case départ" peu fiable d'un
+      // navigateur à l'autre. Le suivi manuel du pointeur est le même mécanisme déjà utilisé
+      // pour les poignées de découpage et le scrub de la timeline — cohérent et robuste.
+      block.addEventListener("pointerdown", (e) => {
+        if (e.target.closest(".studio-clip-remove") || !clip.id) return;
         dragSourceIndex = i;
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", "reorder");
-        block.classList.add("dragging-clip");
-      });
-      block.addEventListener("dragend", () => {
-        dragSourceIndex = null;
-        studioTimelinePanel.classList.remove("dragover");
-        timelineTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip", "drop-before", "drop-after"));
-      });
-      block.addEventListener("dragover", (e) => {
-        if (dragSourceIndex === null) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        const before = e.clientX - block.getBoundingClientRect().left < block.offsetWidth / 2;
-        block.classList.toggle("drop-before", before);
-        block.classList.toggle("drop-after", !before);
-      });
-      block.addEventListener("dragleave", () => block.classList.remove("drop-before", "drop-after"));
-      block.addEventListener("drop", (e) => {
-        if (dragSourceIndex === null) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const before = e.clientX - block.getBoundingClientRect().left < block.offsetWidth / 2;
-        reorderClip(dragSourceIndex, i + (before ? 0 : 1));
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragEngaged = false;
       });
 
       timelineTrack.appendChild(block);
@@ -886,6 +871,43 @@ const FORMS = {
     if (playingClipRef) playingIndex = timeline.indexOf(playingClipRef);
     renderTimeline();
   }
+
+  const DRAG_REORDER_THRESHOLD = 6;
+
+  window.addEventListener("pointermove", (e) => {
+    if (dragSourceIndex === null) return;
+    if (!dragEngaged) {
+      if (Math.abs(e.clientX - dragStartX) < DRAG_REORDER_THRESHOLD && Math.abs(e.clientY - dragStartY) < DRAG_REORDER_THRESHOLD) return;
+      dragEngaged = true;
+      const sourceBlock = timelineTrack.children[dragSourceIndex];
+      if (sourceBlock) sourceBlock.classList.add("dragging-clip");
+    }
+    timelineTrack.querySelectorAll(".drop-before, .drop-after").forEach((b) => b.classList.remove("drop-before", "drop-after"));
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".studio-clip");
+    if (target && target.parentElement === timelineTrack) {
+      const rect = target.getBoundingClientRect();
+      const before = e.clientX - rect.left < rect.width / 2;
+      target.classList.toggle("drop-before", before);
+      target.classList.toggle("drop-after", !before);
+    }
+  });
+
+  window.addEventListener("pointerup", (e) => {
+    if (dragSourceIndex === null) return;
+    const fromIndex = dragSourceIndex;
+    const wasEngaged = dragEngaged;
+    timelineTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip", "drop-before", "drop-after"));
+    dragSourceIndex = null;
+    dragEngaged = false;
+    if (!wasEngaged) return; // simple clic, pas un glisser
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".studio-clip");
+    if (!target || target.parentElement !== timelineTrack) return;
+    const targetIndex = Array.from(timelineTrack.children).indexOf(target);
+    if (targetIndex === -1) return;
+    const rect = target.getBoundingClientRect();
+    const before = e.clientX - rect.left < rect.width / 2;
+    reorderClip(fromIndex, targetIndex + (before ? 0 : 1));
+  });
 
   function removeClip(index) {
     timeline.splice(index, 1);
