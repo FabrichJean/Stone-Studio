@@ -644,6 +644,12 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px 18px 18px;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.studio-timeline.dragover {
+  border-color: var(--accent);
+  background: #fbf3ee;
 }
 
 .studio-timeline-header {

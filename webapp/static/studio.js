@@ -587,12 +587,26 @@ const FORMS = {
     if (panelReplaceInput.files.length) replaceToolInput(panelReplaceInput.files[0]);
     panelReplaceInput.value = "";
   });
-  activeClipBanner.addEventListener("dragover", (e) => { e.preventDefault(); activeClipBanner.classList.add("dragover"); });
-  activeClipBanner.addEventListener("dragleave", () => activeClipBanner.classList.remove("dragover"));
-  activeClipBanner.addEventListener("drop", (e) => {
-    e.preventDefault();
-    activeClipBanner.classList.remove("dragover");
-    if (e.dataTransfer.files.length) replaceToolInput(e.dataTransfer.files[0]);
+  // Écouté sur le conteneur ET sur les éléments média eux-mêmes : un <video controls> peut
+  // absorber les événements de glisser-déposer différemment selon le navigateur, donc on
+  // s'assure que le drop fonctionne peu importe où exactement le fichier est lâché.
+  [activeClipBanner, panelCropWrap, panelVideo, panelAudio].forEach((el) => {
+    el.addEventListener("dragenter", (e) => { e.preventDefault(); });
+    el.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      activeClipBanner.classList.add("dragover");
+    });
+    el.addEventListener("dragleave", (e) => {
+      if (e.relatedTarget && activeClipBanner.contains(e.relatedTarget)) return;
+      activeClipBanner.classList.remove("dragover");
+    });
+    el.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      activeClipBanner.classList.remove("dragover");
+      if (e.dataTransfer.files.length) replaceToolInput(e.dataTransfer.files[0]);
+    });
   });
 
   /* ===================== Choisir un projet existant comme remplacement ===================== */
