@@ -864,10 +864,27 @@ const FORMS = {
       block.addEventListener("drop", (e) => {
         if (dragSourceIndex === null) return;
         e.preventDefault();
+        e.stopPropagation();
+        const before = e.clientX - block.getBoundingClientRect().left < block.offsetWidth / 2;
+        reorderClip(dragSourceIndex, i + (before ? 0 : 1));
+      });
+
       timelineTrack.appendChild(block);
     });
     exportBtn.disabled = timeline.length === 0 || timeline.some((c) => c.pending);
     updatePlayheadUI();
+  }
+
+  function reorderClip(fromIndex, toIndex) {
+    if (fromIndex === toIndex || fromIndex + 1 === toIndex) return;
+    const activeClipRef = timeline[activeIndex];
+    const playingClipRef = timeline[playingIndex];
+    const [moved] = timeline.splice(fromIndex, 1);
+    const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex;
+    timeline.splice(insertAt, 0, moved);
+    if (activeClipRef) activeIndex = timeline.indexOf(activeClipRef);
+    if (playingClipRef) playingIndex = timeline.indexOf(playingClipRef);
+    renderTimeline();
   }
 
   function removeClip(index) {
@@ -1088,6 +1105,9 @@ const FORMS = {
     collect() {
       if (track.segments.length > 0) {
         return { mode: "segments", segments: track.segments.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end) })) };
+      }
+      if (!track.duration || track.end - track.start < MIN_GAP) {
+        throw new Error("La sélection est invalide (durée du média pas encore chargée ?). Réessayez.");
       }
       return { mode: "single", start: secondsToTimestamp(track.start), end: secondsToTimestamp(track.end) };
     },
