@@ -308,6 +308,9 @@ const FORMS = {
   let dragStartX = null;
   let dragStartY = null;
   let dragEngaged = false; // ne devient true qu'une fois le seuil de déplacement franchi
+  let dragGhost = null; // clone flottant (position: fixed) qui suit le pointeur pendant le glisser
+  let dragGrabOffsetX = 0;
+  let dragGrabOffsetY = 0;
 
   function toolInputClip() {
     return stagedSource || timeline[activeIndex];
@@ -877,15 +880,42 @@ const FORMS = {
 
   const DRAG_REORDER_THRESHOLD = 6;
 
+  function positionDragGhost(e) {
+    if (!dragGhost) return;
+    dragGhost.style.left = `${e.clientX - dragGrabOffsetX}px`;
+    dragGhost.style.top = `${e.clientY - dragGrabOffsetY}px`;
+  }
+
   window.addEventListener("pointermove", (e) => {
     if (dragSourceIndex === null) return;
     if (!dragEngaged) {
       if (Math.abs(e.clientX - dragStartX) < DRAG_REORDER_THRESHOLD && Math.abs(e.clientY - dragStartY) < DRAG_REORDER_THRESHOLD) return;
       dragEngaged = true;
       const sourceBlock = timelineTrack.children[dragSourceIndex];
-      if (sourceBlock) sourceBlock.classList.add("dragging-clip");
+      if (sourceBlock) {
+        sourceBlock.classList.add("dragging-clip");
+        // Le clone flottant (position: fixed, hors du conteneur défilable) suit le pointeur —
+        // en déplaçant le bloc original à la place, il se faisait couper par l'overflow du
+        // scroll horizontal de la timeline dès qu'on dépassait son bord visible.
+        const rect = sourceBlock.getBoundingClientRect();
+        dragGrabOffsetX = dragStartX - rect.left;
+        dragGrabOffsetY = dragStartY - rect.top;
+        dragGhost = document.createElement("div");
+        dragGhost.className = "studio-clip-ghost" + (sourceBlock.classList.contains("studio-clip-audio") ? " studio-clip-audio" : "");
+        dragGhost.style.width = `${rect.width}px`;
+        dragGhost.style.height = `${rect.height}px`;
+        dragGhost.style.backgroundImage = sourceBlock.style.backgroundImage;
+        const label = sourceBlock.querySelector(".studio-clip-label");
+        if (label) dragGhost.innerHTML = `<span class="studio-clip-label">${label.textContent}</span>`;
+        document.body.appendChild(dragGhost);
+        positionDragGhost(e);
+      }
     }
+    positionDragGhost(e);
+
     timelineTrack.querySelectorAll(".drop-before, .drop-after").forEach((b) => b.classList.remove("drop-before", "drop-after"));
+    // Le clone a pointer-events:none, donc elementFromPoint "voit à travers" jusqu'à la
+    // vraie cible sous le curseur.
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".studio-clip");
     if (target && target.parentElement === timelineTrack) {
       const rect = target.getBoundingClientRect();
@@ -899,6 +929,7 @@ const FORMS = {
     if (dragSourceIndex === null) return;
     const fromIndex = dragSourceIndex;
     const wasEngaged = dragEngaged;
+    if (dragGhost) { dragGhost.remove(); dragGhost = null; }
     timelineTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip", "drop-before", "drop-after"));
     dragSourceIndex = null;
     dragEngaged = false;
