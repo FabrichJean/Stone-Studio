@@ -760,6 +760,276 @@ const FORMS = {
       container.innerHTML = `
         <div class="mode-toggle">
           <button type="button" class="mode-toggle-btn active" data-mode="global">Vitesse globale</button>
+          <button type="button" class="mode-toggle-btn" data-mode="segments">Par morceau</button>
+        </div>
+        <div class="speed-panel" id="speedGlobalPanel">
+          <label class="speed-label">Vitesse du fichier entier ${speedFactorSelectHtml("speedGlobalFactor", "1")}</label>
+        </div>
+        <div class="speed-panel" id="speedSegmentsPanel" hidden>
+          ${trimTrackHtml()}
+          <label class="speed-label">Vitesse de ce morceau ${speedFactorSelectHtml("speedSegmentFactor", "1.5")}</label>
+          <div class="btn-row">
+            <button type="button" class="btn-secondary" id="speedPreviewBtn">Prévisualiser</button>
+            <button type="button" class="btn-secondary" id="speedAddSegmentBtn">Ajouter ce morceau</button>
+          </div>
+          <div class="segments-list" id="speedSegmentsList"></div>
+        </div>`;
+
+      const segmentsPanel = document.getElementById("speedSegmentsPanel");
+      const globalPanel = document.getElementById("speedGlobalPanel");
+      let trackEls = null;
+
+      container.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          mode = btn.dataset.mode;
+          container.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+          globalPanel.hidden = mode !== "global";
+          segmentsPanel.hidden = mode !== "segments";
+          activeMediaEl().playbackRate = 1;
+          if (mode === "segments" && !trackEls) {
+            trackEls = initTrack(segmentsPanel);
+            renderSpeedSegments();
+          }
+        });
+      });
+
+      function renderSpeedSegments() {
+        const list = document.getElementById("speedSegmentsList");
+        if (!list) return;
+        if (track.segments.length === 0) {
+          list.innerHTML = `<div class="segments-empty">Aucun morceau ajouté.</div>`;
+          return;
+        }
+        list.innerHTML = track.segments.map((seg, i) => `
+          <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
+            <span>
+              <span class="segment-label">${i + 1}. ${secondsToTimestamp(seg.start)} → ${secondsToTimestamp(seg.end)}</span>
+              <span class="segment-duration">(${secondsToTimestamp(seg.end - seg.start)})</span>
+              <span class="segment-speed-tag">${seg.factor}x</span>
+            </span>
+            <button type="button" class="segment-remove" data-index="${i}" title="Retirer">✕</button>
+          </div>`).join("");
+        list.querySelectorAll(".segment-item").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            if (e.target.closest(".segment-remove")) return;
+            const seg = track.segments[Number(el.dataset.index)];
+            const media = activeMediaEl();
+            playRanges(media, [seg], () => { media.playbackRate = seg.factor; });
+          });
+        });
+        list.querySelectorAll(".segment-remove").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            track.segments.splice(Number(btn.dataset.index), 1);
+            renderSpeedSegments();
+            if (trackEls) renderTrackMarkers(trackEls);
+          });
+        });
+      }
+
+      document.getElementById("speedPreviewBtn")?.addEventListener("click", () => {
+        activeMediaEl().playbackRate = 1;
+        playRanges(activeMediaEl(), [{ start: track.start, end: track.end }]);
+      });
+
+      document.getElementById("speedAddSegmentBtn")?.addEventListener("click", () => {
+        const factor = parseFloat(document.getElementById("speedSegmentFactor").value);
+        const addedEnd = track.end;
+        track.segments.push({ start: track.start, end: track.end, factor });
+        track.segments.sort((a, b) => a.start - b.start);
+        renderSpeedSegments();
+        updateTrackUI(trackEls);
+        if (addedEnd < track.duration - MIN_GAP) {
+          track.start = addedEnd;
+          track.end = track.duration;
+          activeMediaEl().currentTime = track.start;
+          updateTrackUI(trackEls);
+        }
+      });
+
+      // Initialise toujours un track (même en mode global) pour disposer de la durée courante.
+      track = { duration: activeDuration(), start: 0, end: activeDuration(), segments: [], dragging: null };
+      this._getMode = () => mode;
+    },
+    collect() {
+      const mode = this._getMode();
+      activeMediaEl().playbackRate = 1;
+      if (mode === "segments") {
+        if (!track.segments.length) throw new Error("Ajoutez au moins un morceau.");
+        return { mode: "segments", segments: track.segments.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end), factor: s.factor })) };
+      }
+      return { mode: "global", factor: document.getElementById("speedGlobalFactor").value };
+    },
+  };
+
+  /* ===================== Panneau Transformation ===================== */
+
+  const OrientationPanel = {
+    render(container) {
+      let mode = "global";
+      let selectedAspect = "";
+      let aspectPos = 0.5;
+      let cropAxis = null;
+      let draggingCrop = false;
+      let customRect = null;
+      let customDragMode = null;
+      let customHandle = null;
+      let customDragStart = null;
+      let customRectStart = null;
+      let globalActions = [];
+      let currentSegmentActions = [];
+      let trackEls = null;
+
+      const aspectButtons = () => `
+        <div class="orientation-grid">
+          <button type="button" class="orientation-btn active" data-aspect="">
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="4.5" width="16" height="13" rx="1.5" stroke-dasharray="2.5 2"/></svg>
+            <span>Original</span>
+          </button>
+          <button type="button" class="orientation-btn" data-aspect="landscape_16_9">
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="6.4" width="19" height="9.2" rx="1.5"/></svg>
+            <span>16:9</span>
+          </button>
+          <button type="button" class="orientation-btn" data-aspect="portrait_9_16">
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="6.4" y="1.5" width="9.2" height="19" rx="1.5"/></svg>
+            <span>9:16</span>
+          </button>
+          <button type="button" class="orientation-btn" data-aspect="square_1_1">
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="16" height="16" rx="1.5"/></svg>
+            <span>1:1</span>
+          </button>
+          <button type="button" class="orientation-btn" data-aspect="portrait_4_5">
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="5" y="2" width="12" height="18" rx="1.5"/></svg>
+            <span>4:5</span>
+          </button>
+          <button type="button" class="orientation-btn" data-aspect="custom">
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="16" height="16" rx="1.5" stroke-dasharray="2.5 2"/><path d="M13.5 8.5l-5 5m0-4v4h4" stroke-dasharray="none"/></svg>
+            <span>Perso</span>
+          </button>
+        </div>`;
+
+      const actionButtonsInner = `
+          <button type="button" class="orientation-btn" data-action="rotate_90_ccw">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 5.8A5 5 0 1 1 3 8"/><path d="M3.2 2.5v3.3h3.3"/></svg>
+            <span>90° antihoraire</span>
+          </button>
+          <button type="button" class="orientation-btn" data-action="rotate_90_cw">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg>
+            <span>90° horaire</span>
+          </button>
+          <button type="button" class="orientation-btn" data-action="rotate_180">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12"/><path d="M5 5L2 8l3 3"/><path d="M11 5l3 3-3 3"/></svg>
+            <span>180°</span>
+          </button>
+          <button type="button" class="orientation-btn" data-action="flip_horizontal">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v13"/><path d="M4.5 5L2 8l2.5 3"/><path d="M11.5 5L14 8l-2.5 3"/></svg>
+            <span>Miroir H</span>
+          </button>
+          <button type="button" class="orientation-btn" data-action="flip_vertical">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8h13"/><path d="M5 4.5L8 2l3 2.5"/><path d="M5 11.5L8 14l3-2.5"/></svg>
+            <span>Miroir V</span>
+          </button>`;
+
+      container.innerHTML = `
+        <h4 id="aspectSectionTitle" class="studio-subheading">Format d'affichage (résultat final)</h4>
+        ${aspectButtons()}
+        <p class="studio-form-note" id="aspectHint" hidden>Glissez le cadre sur l'aperçu pour choisir la zone conservée.</p>
+        <p class="studio-form-note" id="customHint" hidden>Dessinez un cadre sur l'aperçu, puis ajustez-le par les coins ou en le déplaçant.</p>
+
+        <div class="mode-toggle" style="margin-top:16px;">
+          <button type="button" class="mode-toggle-btn active" data-mode="global">Orientation globale</button>
+          <button type="button" class="mode-toggle-btn" data-mode="segments">Par morceau</button>
+        </div>
+
+        <div class="speed-panel" id="orientGlobalPanel">
+          <div class="orientation-grid">${actionButtonsInner}</div>
+        </div>
+
+        <div class="speed-panel" id="orientSegmentsPanel" hidden>
+          ${trimTrackHtml()}
+          <div class="orientation-grid" id="orientSegmentActions">${actionButtonsInner}</div>
+          <div class="btn-row">
+            <button type="button" class="btn-secondary" id="orientPreviewBtn">Prévisualiser</button>
+            <button type="button" class="btn-secondary" id="orientAddSegmentBtn">Ajouter ce morceau</button>
+          </div>
+          <div class="segments-list" id="orientSegmentsList"></div>
+        </div>`;
+
+      const globalPanel = document.getElementById("orientGlobalPanel");
+      const segmentsPanel = document.getElementById("orientSegmentsPanel");
+      const aspectHint = document.getElementById("aspectHint");
+      const customHint = document.getElementById("customHint");
+
+      function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+      function pointToFraction(clientX, clientY) {
+        const rect = videoEl.getBoundingClientRect();
+        return { x: clamp01((clientX - rect.left) / rect.width), y: clamp01((clientY - rect.top) / rect.height) };
+      }
+
+      function resizeCustomRect(start, handle, cur) {
+        let left = start.x, top = start.y, right = start.x + start.w, bottom = start.y + start.h;
+        if (handle.includes("w")) left = Math.min(cur.x, right - MIN_CUSTOM);
+        if (handle.includes("e")) right = Math.max(cur.x, left + MIN_CUSTOM);
+        if (handle.includes("n")) top = Math.min(cur.y, bottom - MIN_CUSTOM);
+        if (handle.includes("s")) bottom = Math.max(cur.y, top + MIN_CUSTOM);
+        left = clamp01(left); right = clamp01(right); top = clamp01(top); bottom = clamp01(bottom);
+        return { x: left, y: top, w: right - left, h: bottom - top };
+      }
+
+      function applyPreviewTransform(actions) {
+        if (!actions || actions.length === 0) { videoEl.style.transform = ""; return; }
+        let transform = actions.map((a) => TRANSFORMS[a]).join(" ");
+        if (actions.some((a) => ROTATE_90_ACTIONS.has(a))) {
+          const { width, height } = videoEl.getBoundingClientRect();
+          const fitScale = Math.min(width / height, height / width);
+          transform += ` scale(${fitScale})`;
+        }
+        videoEl.style.transform = transform;
+      }
+
+      function updateCropBox() {
+        if (!selectedAspect) {
+          cropOverlay.hidden = true;
+          cropOverlay.classList.remove("drawable");
+          cropBox.classList.remove("resizable");
+          aspectHint.hidden = true;
+          customHint.hidden = true;
+          return;
+        }
+        if (selectedAspect === "custom") {
+          cropOverlay.hidden = false;
+          cropOverlay.classList.add("drawable");
+          cropBox.classList.add("resizable");
+          aspectHint.hidden = true;
+          customHint.hidden = false;
+          if (!customRect) { cropBox.hidden = true; return; }
+          const w = videoEl.clientWidth, h = videoEl.clientHeight;
+          cropBox.hidden = false;
+          cropBox.style.left = `${customRect.x * w}px`;
+          cropBox.style.top = `${customRect.y * h}px`;
+          cropBox.style.width = `${customRect.w * w}px`;
+          cropBox.style.height = `${customRect.h * h}px`;
+          return;
+        }
+        cropOverlay.classList.remove("drawable");
+        cropBox.classList.remove("resizable");
+        cropBox.hidden = false;
+        customHint.hidden = true;
+        const w = videoEl.clientWidth, h = videoEl.clientHeight;
+        if (!w || !h) return;
+        const r = ASPECT_NUMERIC[selectedAspect];
+        const videoAR = w / h;
+        const widthCrop = videoAR > r;
+        const boxW = widthCrop ? h * r : w;
+        const boxH = widthCrop ? h : w / r;
+        cropAxis = widthCrop ? "x" : "y";
+        const maxOffset = widthCrop ? w - boxW : h - boxH;
+        const offset = maxOffset * aspectPos;
+        cropBox.style.width = `${boxW}px`;
+        cropBox.style.height = `${boxH}px`;
+        cropBox.style.left = `${widthCrop ? offset : 0}px`;
+        cropBox.style.top = `${widthCrop ? 0 : offset}px`;
+        cropOverlay.hidden = false;
   function renderTabs() {
     tabsEl.innerHTML = STUDIO_ACTIONS.map((a) => `
       <button type="button" class="studio-action-tab${a.type === selectedType ? " active" : ""}" data-type="${a.type}">
