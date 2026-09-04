@@ -1,25 +1,57 @@
 {% extends "base.html" %}
 {% block content %}
-    <header class="page-header projects-header">
-      <div>
-        <h1><span class="icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.5h5.2A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7z"/></svg></span> Mes projets</h1>
-        <p>Historique des fichiers traités par les outils du studio.</p>
+    <div class="projects-hero">
+      <h1>Tous les projets</h1>
+      <div class="projects-search">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M13.5 13.5L10.5 10.5"/></svg>
+        <input type="text" id="projectsSearch" placeholder="Rechercher un fichier..." autocomplete="off" />
       </div>
-      <div class="view-toggle" id="viewToggle">
-        <button type="button" class="view-toggle-btn" data-view="list" title="Vue liste">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 4.5H13M3 8H13M3 11.5H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        </button>
-        <button type="button" class="view-toggle-btn" data-view="card" title="Vue cartes">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="2" y="9" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor"/></svg>
-        </button>
+      <div class="projects-filters" id="projectsFilters">
+        <div class="filter-dropdown" data-filter="tool">
+          <button type="button" class="filter-dd-btn">
+            <span class="filter-dd-label">Outil</span>
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l5 5 5-5"/></svg>
+          </button>
+          <div class="filter-dd-menu" hidden></div>
+        </div>
+        <div class="filter-dropdown" data-filter="type">
+          <button type="button" class="filter-dd-btn">
+            <span class="filter-dd-label">Type</span>
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l5 5 5-5"/></svg>
+          </button>
+          <div class="filter-dd-menu" hidden>
+            <button type="button" class="filter-dd-item active" data-value="all">Tous</button>
+            <button type="button" class="filter-dd-item" data-value="video">Vidéo</button>
+            <button type="button" class="filter-dd-item" data-value="audio">Audio</button>
+          </div>
+        </div>
+        <div class="filter-dropdown" data-filter="sort">
+          <button type="button" class="filter-dd-btn">
+            <span class="filter-dd-label">Date de modification</span>
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l5 5 5-5"/></svg>
+          </button>
+          <div class="filter-dd-menu" hidden>
+            <button type="button" class="filter-dd-item active" data-value="new">Plus récent</button>
+            <button type="button" class="filter-dd-item" data-value="old">Plus ancien</button>
+          </div>
+        </div>
       </div>
-    </header>
+    </div>
 
     <div class="projects-toolbar">
-      <div class="projects-tabs" id="projectsTabs"></div>
-      <div class="projects-search">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M13.5 13.5L10.5 10.5"/></svg>
-        <input type="text" id="projectsSearch" placeholder="Rechercher un fichier..." autocomplete="off" />
+      <span class="projects-count" id="projectsCount"></span>
+      <div class="projects-toolbar-actions">
+        <div class="view-toggle" id="viewToggle">
+          <button type="button" class="view-toggle-btn" data-view="list" title="Vue liste">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 4.5H13M3 8H13M3 11.5H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="view-toggle-btn" data-view="card" title="Vue cartes">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="2" width="5" height="5" rx="1" fill="currentColor"/><rect x="2" y="9" width="5" height="5" rx="1" fill="currentColor"/><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor"/></svg>
+          </button>
+        </div>
+        <a href="/studio" class="projects-new-btn" title="Nouveau contenu">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+        </a>
       </div>
     </div>
 

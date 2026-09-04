@@ -1678,37 +1678,108 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 }
 
 /* Projets */
-.projects-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+/* Bandeau "héros" en haut de la page Projets, façon Canva : dégradé plein cadre, titre et
+   recherche centrés, filtres en pilules juste en dessous. */
+.projects-hero {
+  margin: -32px -40px 28px;
+  padding: 48px 40px 56px;
+  background:
+    linear-gradient(to bottom, rgba(250, 249, 245, 0) 0%, var(--bg-light) 100%),
+    linear-gradient(120deg, #fbeee7 0%, #f4f1ee 35%, #eceaf5 65%, #efe6f7 100%);
+  text-align: center;
 }
 
-.projects-toolbar {
+.projects-hero h1 {
+  font-family: Georgia, "Iowan Old Style", Palatino, serif;
+  font-weight: 400;
+  font-size: 34px;
+  color: var(--text-dark);
+  margin-bottom: 24px;
+}
+
+.projects-hero .projects-search {
+  width: 100%;
+  max-width: 620px;
+  height: 52px;
+  margin: 0 auto 18px;
+  padding: 0 20px;
+  border-radius: 999px;
+}
+
+.projects-hero .projects-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.12);
+}
+
+.projects-hero .projects-search input { font-size: 15px; }
+
+.projects-filters {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: center;
+  gap: 10px;
   flex-wrap: wrap;
-  margin: 20px 0;
 }
 
-.projects-tabs {
+.filter-dropdown { position: relative; }
+
+.filter-dd-btn {
   display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  padding: 8px 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dark);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
 }
 
-.projects-tabs .filter-pill {
+.filter-dd-btn:hover { background: var(--bg-light); }
+.filter-dropdown.open .filter-dd-btn { border-color: var(--accent); color: var(--accent); }
+.filter-dropdown.filter-active .filter-dd-btn { background: var(--text-dark); border-color: var(--text-dark); color: #fff; }
+
+.filter-dd-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 180px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(38, 36, 33, 0.16);
+  padding: 6px;
+  z-index: 10;
+  text-align: left;
+}
+
+.filter-dd-menu[hidden] { display: none; }
+
+.filter-dd-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-dark);
+  text-align: left;
+  cursor: pointer;
 }
 
-.projects-tabs .filter-pill .count {
-  font-size: 11px;
-  opacity: 0.7;
-}
+.filter-dd-item:hover { background: var(--bg-light); }
+.filter-dd-item.active { background: var(--sidebar-active-bg); font-weight: 600; }
+.filter-dd-item .count { font-size: 11px; color: var(--text-muted); font-weight: 400; }
 
 .projects-search {
   display: flex;
@@ -1733,6 +1804,73 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   color: var(--text-dark);
   background: none;
 }
+
+.projects-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.projects-count { font-size: 13px; color: var(--text-muted); }
+
+.projects-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.projects-new-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+}
+
+.projects-new-btn:hover { background: var(--accent-hover); }
+
+.projects-section { margin-bottom: 32px; }
+
+.projects-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-bottom: 14px;
+  user-select: none;
+}
+
+.projects-section-header h2 {
+  font-family: Georgia, "Iowan Old Style", Palatino, serif;
+  font-weight: 400;
+  font-size: 20px;
+  color: var(--text-dark);
+}
+
+.projects-section-header .count { font-size: 13px; color: var(--text-muted); }
+
+.projects-section-header .chevron {
+  display: flex;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.projects-section.collapsed .chevron { transform: rotate(-90deg); }
+.projects-section.collapsed .projects-section-body { display: none; }
+
+.projects-section-row {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.projects-section-row .project-grid-card { flex: 0 0 200px; }
 
 .projects-no-results {
   padding: 40px 20px;
