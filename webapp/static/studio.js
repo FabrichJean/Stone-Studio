@@ -1387,7 +1387,7 @@ const FORMS = {
           </button>
         </div>
 
-        <div class="mode-toggle" style="margin-top:16px;">
+        <div class="mode-toggle" id="orientModeToggle" style="margin-top:16px;">
           <button type="button" class="mode-toggle-btn active" data-mode="global">Orientation globale</button>
           <button type="button" class="mode-toggle-btn" data-mode="segments">Par morceau</button>
         </div>
@@ -1656,10 +1656,11 @@ const FORMS = {
         });
       });
 
-      container.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+      const orientModeToggle = document.getElementById("orientModeToggle");
+      orientModeToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           mode = btn.dataset.mode;
-          container.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+          orientModeToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
           globalPanel.hidden = mode !== "global";
           segmentsPanel.hidden = mode !== "segments";
           panelVideo.style.transform = "";
