@@ -134,6 +134,19 @@ def _custom_crop_filter(rect: dict) -> str:
     )
 
 
+def _zoom_filter(rect: dict, target_w: int, target_h: int) -> str:
+    """Comme `_custom_crop_filter`, mais réagrandit ensuite la zone rognée aux dimensions
+    `target_w`x`target_h` (données en pixels, pas en formule ffmpeg : après le crop, `iw`/`ih`
+    référencent déjà la taille rognée, pas la taille d'origine) — un vrai effet de zoom/cadrage
+    serré, contrairement au format d'affichage qui se contente de réduire la taille du cadre."""
+    x, y, w, h = rect["x"], rect["y"], rect["w"], rect["h"]
+    return (
+        f"crop=w='trunc(iw*{w}/2)*2':h='trunc(ih*{h}/2)*2':"
+        f"x='trunc(iw*{x})':y='trunc(ih*{y})',"
+        f"scale={target_w}:{target_h}"
+    )
+
+
 def change_orientation(
     input_path: Path,
     output_path: Path,
@@ -143,14 +156,15 @@ def change_orientation(
     aspect_ratio: str | None = None,
     aspect_position: float = 0.5,
     crop_rect: dict | None = None,
+    zoom_rect: dict | None = None,
     on_progress: ProgressCallback | None = None,
     progress_range: tuple[float, float] = (0.0, 1.0),
 ) -> None:
     for action in actions:
         if action not in ACTIONS:
             raise ValueError(f"Action inconnue : {action}. Choix possibles : {', '.join(ACTIONS)}")
-    if not actions and not aspect_ratio and not crop_rect:
-        raise ValueError("Au moins une action ou un format d'affichage est requis.")
+    if not actions and not aspect_ratio and not crop_rect and not zoom_rect:
+        raise ValueError("Au moins une action, un zoom ou un format d'affichage est requis.")
 
     filter_parts = []
     audio_filter = None
@@ -167,6 +181,13 @@ def change_orientation(
         trim_expr = ":".join(bounds)
         filter_parts += [f"trim={trim_expr}", "setpts=PTS-STARTPTS"]
         audio_filter = f"atrim={trim_expr},asetpts=PTS-STARTPTS"
+
+    # Le zoom s'applique en premier (avant rotation/format d'affichage) car ses coordonnées
+    # sont exprimées relativement à la frame d'origine, telle que dessinée par l'utilisateur
+    # sur l'aperçu non pivoté.
+    if zoom_rect:
+        target_w, target_h = probe_dimensions(input_path)
+        filter_parts.append(_zoom_filter(zoom_rect, target_w, target_h))
 
     filter_parts += [ACTIONS[a] for a in actions]
 
@@ -212,8 +233,8 @@ def orient_segments(
     input_path: Path, segments: list[dict], output_path: Path, on_progress: ProgressCallback | None = None
 ) -> None:
     """segments: [{"start", "end", "actions": list[str], "aspect_ratio": str|None,
-    "aspect_position": float, "crop_rect": dict|None}, ...] — orientation ET format
-    d'affichage propres à chaque morceau.
+    "aspect_position": float, "crop_rect": dict|None, "zoom_rect": dict|None}, ...] —
+    orientation, format d'affichage ET zoom propres à chaque morceau.
 
     Des morceaux avec des rotations ou formats différents produisent des dimensions
     différentes : on harmonise sur la plus grande taille (scale + pad) avant de
@@ -241,7 +262,7 @@ def orient_segments(
                 seg.get("actions") or [],
                 seg.get("start"), seg.get("end"),
                 seg.get("aspect_ratio"), seg.get("aspect_position", 0.5),
-                seg.get("crop_rect"),
+                seg.get("crop_rect"), seg.get("zoom_rect"),
                 on_progress=on_progress, progress_range=(cursor, cursor + span),
             )
             cursor += span
