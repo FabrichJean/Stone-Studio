@@ -67,19 +67,21 @@ def _run_orientation(inp: Path, out: Path, params: dict, on_progress: ProgressCa
     if params.get("mode") == "segments":
         segments = params.get("segments") or []
         if not segments:
-            raise ChainError("Transformation : ajoutez au moins un morceau.")
+            raise ChainError("Screen : ajoutez au moins un morceau.")
         orient_segments(inp, segments, out, on_progress=on_progress)
         return
     actions = params.get("actions") or []
     aspect_ratio = params.get("aspect_ratio") or None
     crop_rect = params.get("crop_rect") or None
-    if not actions and not aspect_ratio and not crop_rect:
-        raise ChainError("Transformation : choisissez au moins une rotation ou un format d'affichage.")
+    zoom_rect = params.get("zoom_rect") or None
+    if not actions and not aspect_ratio and not crop_rect and not zoom_rect:
+        raise ChainError("Screen : choisissez au moins une rotation, un zoom ou un format d'affichage.")
     change_orientation(
         inp, out, actions,
         aspect_ratio=aspect_ratio,
         aspect_position=float(params.get("aspect_position", 0.5)),
         crop_rect=crop_rect,
+        zoom_rect=zoom_rect,
         on_progress=on_progress,
     )
 
@@ -160,7 +162,10 @@ def run_chain(
             runner(cursor, out_path, params, wrapped if on_progress else None)
         except ChainError:
             raise
-        except RuntimeError as e:
+        except Exception as e:
+            # N'importe quelle exception (ValueError d'un outil, etc.) doit devenir une
+            # ChainError : sinon elle remonte hors du thread d'arrière-plan sans jamais
+            # marquer le job en erreur, et le frontend reste bloqué à sonder indéfiniment.
             label = STEP_LABELS.get(step_type, step_type)
             raise ChainError(f"« {label} » a échoué : {e}") from e
 
