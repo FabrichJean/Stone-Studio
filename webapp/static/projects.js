@@ -93,9 +93,41 @@ function toolLabelFor(tool) {
 function buildTabs() {
   const counts = {};
   allProjects.forEach((p) => { counts[p.tool] = (counts[p.tool] || 0) + 1; });
+
+  const tools = Object.keys(counts).sort((a, b) => {
+    const pa = TOOL_TAB_PRIORITY.indexOf(a);
+    const pb = TOOL_TAB_PRIORITY.indexOf(b);
+    if (pa !== -1 || pb !== -1) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
+    return toolLabelFor(a).localeCompare(toolLabelFor(b));
+  });
+
+  const tabsEl = document.getElementById("projectsTabs");
+  tabsEl.innerHTML = [
+    `<button type="button" class="filter-pill${activeTool === "all" ? " active" : ""}" data-tool="all">Tous <span class="count">${allProjects.length}</span></button>`,
+    ...tools.map((tool) => `
+      <button type="button" class="filter-pill${activeTool === tool ? " active" : ""}" data-tool="${tool}">
+        ${toolLabelFor(tool)} <span class="count">${counts[tool]}</span>
+      </button>`),
+  ].join("");
+
+  tabsEl.querySelectorAll("[data-tool]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeTool = btn.dataset.tool;
+      buildTabs();
+      renderProjects();
+    });
+  });
+}
+
+document.getElementById("projectsSearch").addEventListener("input", (e) => {
+  searchQuery = e.target.value;
+  renderProjects();
+});
+
 fetch("/api/projects")
   .then((r) => r.json())
   .then((data) => {
     allProjects = data;
+    buildTabs();
     renderProjects();
   });
