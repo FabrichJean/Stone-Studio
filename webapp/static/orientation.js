@@ -21,6 +21,8 @@ const globalPanel = document.getElementById("globalPanel");
 const segmentsPanel = document.getElementById("segmentsPanel");
 const globalActionsEl = document.getElementById("globalActions");
 const segmentActionsEl = document.getElementById("segmentActions");
+const segmentsOutputToggle = document.getElementById("segmentsOutputToggle");
+const segmentsOutputHint = document.getElementById("segmentsOutputHint");
 const applyBtn = document.getElementById("applyBtn");
 const progressWrap = document.getElementById("progressWrap");
 const progressFill = document.getElementById("progressFill");
@@ -370,6 +372,7 @@ let dragging = null;
 let previewStopHandler = null;
 let segments = []; // [{ start, end, actions: string[] }]
 let mode = "global";
+let keepFull = false; // mode=segments : garder toute la vidéo (portions non sélectionnées inchangées)
 let globalActions = []; // ordre de clic = ordre d'application
 let currentSegmentActions = [];
 
@@ -438,6 +441,9 @@ function handleFile(file) {
   globalActions = [];
   currentSegmentActions = [];
   segments = [];
+  keepFull = false;
+  segmentsOutputToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b.dataset.keepFull === "false"));
+  segmentsOutputHint.textContent = "Le résultat ne contiendra que les morceaux sélectionnés, mis bout à bout.";
   preview.style.transform = "";
   selectedAspect = "";
   aspectPos = 0.5;
@@ -506,6 +512,16 @@ modeToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
     document.getElementById("aspectSectionTitle").textContent =
       mode === "global" ? "Format d'affichage (appliqué au résultat final)" : "Format d'affichage de ce morceau";
     updateApplyState();
+  });
+});
+
+segmentsOutputToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    keepFull = btn.dataset.keepFull === "true";
+    segmentsOutputToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    segmentsOutputHint.textContent = keepFull
+      ? "Le résultat gardera toute la durée d'origine : seuls les morceaux sélectionnés seront transformés, le reste restera inchangé."
+      : "Le résultat ne contiendra que les morceaux sélectionnés, mis bout à bout.";
   });
 });
 
@@ -793,6 +809,7 @@ applyBtn.addEventListener("click", async () => {
         }))
       )
     );
+    formData.append("keep_full", keepFull ? "true" : "false");
   }
 
   try {
