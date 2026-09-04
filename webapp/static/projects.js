@@ -5,6 +5,7 @@ let filters = { tool: "all", type: "all", sort: "new" };
 const collapsedSections = new Set();
 
 const CHEVRON_ICON = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>`;
+const MENU_DOTS_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>`;
 
 function projectRowHtml(p) {
   const files = p.is_source
@@ -31,11 +32,18 @@ function projectRowHtml(p) {
 function projectCardHtml(p) {
   const title = p.is_source ? p.output_name : `${p.input_name} → ${p.output_name}`;
   return `
-    <div class="project-grid-card">
-      <div class="project-grid-thumb">${thumbHtmlCommon(p)}${durationBadgeCommon(p)}</div>
+    <div class="project-grid-card" data-id="${p.id}">
+      <div class="project-grid-thumb">
+        ${thumbHtmlCommon(p)}${durationBadgeCommon(p)}
+        <button type="button" class="project-card-menu-btn" title="Options">${MENU_DOTS_ICON}</button>
+        <div class="project-card-menu" hidden>
+          <button type="button" class="project-card-menu-item" data-action="download">Télécharger</button>
+          <button type="button" class="project-card-menu-item" data-action="open-studio">Ouvrir dans Studio</button>
+          <button type="button" class="project-card-menu-item project-card-menu-item-danger" data-action="delete">Supprimer</button>
+        </div>
+      </div>
       <div class="project-grid-name" title="${title}">${p.output_name}</div>
       <div class="project-grid-meta">${metaLineCommon(p)}</div>
-      <a class="btn-download btn-download-block" href="/api/projects/${p.id}/download" download>${ICONS.download} Télécharger</a>
     </div>`;
 }
 
@@ -213,6 +221,122 @@ function isDefaultFilter(name, value) {
 }
 
 initFilterDropdowns();
+
+/* ---------- Menu "⋯" et modal de détails d'une carte ---------- */
+
+function closeAllCardMenus() {
+  document.querySelectorAll(".project-card-menu").forEach((m) => { m.hidden = true; });
+}
+
+function handleCardAction(action, id) {
+  const record = allProjects.find((p) => p.id === id);
+  if (!record) return;
+  if (action === "download") {
+    const a = document.createElement("a");
+    a.href = `/api/projects/${encodeURIComponent(id)}/download`;
+    a.download = record.output_name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } else if (action === "open-studio") {
+    window.location.href = `/studio?project=${encodeURIComponent(id)}`;
+  } else if (action === "delete") {
+    deleteProject(id);
+  }
+}
+
+function deleteProject(id) {
+  const record = allProjects.find((p) => p.id === id);
+  if (!record) return;
+  if (!confirm(`Supprimer définitivement « ${record.output_name} » ? Cette action est irréversible.`)) return;
+  fetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" })
+    .then((r) => {
+      if (!r.ok) throw new Error();
+      allProjects = allProjects.filter((p) => p.id !== id);
+      buildToolFilterMenu();
+      renderProjects();
+      closeDetailsModal();
+    })
+    .catch(() => alert("Erreur lors de la suppression."));
+}
+
+document.getElementById("projectsContainer").addEventListener("click", (e) => {
+  const menuBtn = e.target.closest(".project-card-menu-btn");
+  if (menuBtn) {
+    e.stopPropagation();
+    const menu = menuBtn.nextElementSibling;
+    const willOpen = menu.hidden;
+    closeAllCardMenus();
+    if (willOpen) menu.hidden = false;
+    return;
+  }
+  const menuItem = e.target.closest(".project-card-menu-item");
+  if (menuItem) {
+    e.stopPropagation();
+    closeAllCardMenus();
+    handleCardAction(menuItem.dataset.action, menuItem.closest(".project-grid-card").dataset.id);
+    return;
+  }
+  const card = e.target.closest(".project-grid-card");
+  if (card) openDetailsModal(card.dataset.id);
+});
+
+document.addEventListener("click", closeAllCardMenus);
+
+const detailsModal = document.getElementById("projectDetailsModal");
+const detailsTitle = document.getElementById("detailsTitle");
+const detailsPreview = document.getElementById("detailsPreview");
+const detailsInfo = document.getElementById("detailsInfo");
+const detailsDownload = document.getElementById("detailsDownload");
+const detailsOpenStudio = document.getElementById("detailsOpenStudio");
+const detailsDelete = document.getElementById("detailsDelete");
+const detailsClose = document.getElementById("detailsClose");
+
+function openDetailsModal(id) {
+  const record = allProjects.find((p) => p.id === id);
+  if (!record) return;
+  const src = `/api/projects/${encodeURIComponent(id)}/download`;
+
+  detailsTitle.textContent = record.output_name;
+  detailsPreview.innerHTML = record.media_type === "audio"
+    ? `<audio controls src="${src}"></audio>`
+    : `<video controls src="${src}"></video>`;
+
+  const rows = [
+    ["Outil", record.tool_label],
+    ["Modifié", record.created_at.slice(0, 16).replace("T", " ")],
+    ["Taille", formatBytesCommon(record.output_size)],
+  ];
+  const duration = formatDurationCommon(record.duration);
+  if (duration) rows.push(["Durée", duration]);
+  if (record.width && record.height) rows.push(["Résolution", `${record.width}×${record.height}`]);
+  if (!record.is_source) rows.push(["Fichier d'origine", record.input_name]);
+  detailsInfo.innerHTML = rows.map(([k, v]) => `<div class="project-details-row"><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+
+  detailsDownload.href = src;
+  detailsDownload.download = record.output_name;
+  detailsOpenStudio.onclick = () => handleCardAction("open-studio", id);
+  detailsDelete.onclick = () => deleteProject(id);
+
+  detailsModal.hidden = false;
+  void detailsModal.offsetWidth;
+  detailsModal.classList.add("open");
+}
+
+function closeDetailsModal() {
+  if (detailsModal.hidden) return;
+  detailsModal.classList.remove("open");
+  detailsModal.addEventListener("transitionend", function onEnd(e) {
+    if (e.target !== detailsModal) return;
+    detailsModal.removeEventListener("transitionend", onEnd);
+    detailsModal.hidden = true;
+    detailsPreview.innerHTML = ""; // stoppe la lecture en cours
+  });
+}
+
+detailsClose.addEventListener("click", closeDetailsModal);
+detailsModal.addEventListener("click", (e) => { if (e.target === detailsModal) closeDetailsModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !detailsModal.hidden) closeDetailsModal(); });
 
 fetch("/api/projects")
   .then((r) => r.json())
