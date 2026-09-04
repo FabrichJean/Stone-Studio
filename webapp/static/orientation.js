@@ -12,6 +12,9 @@ const aspectHint = document.getElementById("aspectHint");
 const customHint = document.getElementById("customHint");
 const cropOverlay = document.getElementById("cropOverlay");
 const cropBox = document.getElementById("cropBox");
+const zoomSection = document.getElementById("zoomSection");
+const zoomGrid = document.getElementById("zoomGrid");
+const zoomHint = document.getElementById("zoomHint");
 const modeSection = document.getElementById("modeSection");
 const modeToggle = document.getElementById("modeToggle");
 const globalPanel = document.getElementById("globalPanel");
@@ -77,15 +80,36 @@ let selectedAspect = "";
 let aspectPos = 0.5;
 let cropAxis = null; // "x" | "y" | null (null = pas de recadrage nécessaire)
 let draggingCrop = false;
-let customRect = null; // { x, y, w, h } en fractions (0..1) de l'aperçu
+let customRect = null; // { x, y, w, h } en fractions (0..1) de l'aperçu — format d'affichage personnalisé
+let zoomRect = null; // { x, y, w, h } — zone à zoomer, indépendante du format d'affichage
+// Quel rectangle l'overlay dessine/édite actuellement : le format d'affichage personnalisé
+// et le zoom réutilisent la même interaction de dessin, mais gardent chacun leur propre
+// rectangle en mémoire (les deux peuvent être actifs à la fois).
+let cropTarget = null; // "aspect" | "zoom" | null
 let customDragMode = null; // "draw" | "move" | "resize" | null
 let customHandle = null; // "nw" | "ne" | "sw" | "se"
 let customDragStart = null; // point de départ du drag, en fractions
-let customRectStart = null; // snapshot de customRect au début du drag
+let customRectStart = null; // snapshot du rectangle actif au début du drag
 
 function hasAspectWork() {
   if (!selectedAspect) return false;
   return selectedAspect === "custom" ? !!customRect : true;
+}
+
+function hasZoomWork() {
+  return !!zoomRect;
+}
+
+function activeRect() {
+  return cropTarget === "zoom" ? zoomRect : customRect;
+}
+
+function setActiveRect(rect) {
+  if (cropTarget === "zoom") zoomRect = rect; else customRect = rect;
+}
+
+function isDrawable() {
+  return cropTarget === "zoom" || (cropTarget === "aspect" && selectedAspect === "custom");
 }
 
 function clamp01(v) {
@@ -120,6 +144,30 @@ function resizeCustomRect(start, handle, cur) {
 }
 
 function updateCropBox() {
+  if (cropTarget === "zoom") {
+    cropOverlay.hidden = false;
+    cropOverlay.classList.add("drawable");
+    cropBox.classList.add("resizable");
+    aspectHint.hidden = true;
+    customHint.hidden = true;
+    zoomHint.hidden = false;
+
+    if (!zoomRect) {
+      cropBox.hidden = true;
+      return;
+    }
+    const w = preview.clientWidth;
+    const h = preview.clientHeight;
+    cropBox.hidden = false;
+    cropBox.style.left = `${zoomRect.x * w}px`;
+    cropBox.style.top = `${zoomRect.y * h}px`;
+    cropBox.style.width = `${zoomRect.w * w}px`;
+    cropBox.style.height = `${zoomRect.h * h}px`;
+    return;
+  }
+
+  zoomHint.hidden = true;
+
   if (!selectedAspect) {
     cropOverlay.hidden = true;
     cropOverlay.classList.remove("drawable");
@@ -181,7 +229,7 @@ function updateCropBox() {
 }
 
 cropBox.addEventListener("pointerdown", (e) => {
-  if (selectedAspect === "custom") {
+  if (isDrawable()) {
     if (e.target.classList.contains("crop-handle") || !customRect) return;
     e.preventDefault();
     customDragMode = "move";
