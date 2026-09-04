@@ -1301,6 +1301,11 @@ const FORMS = {
       let cropAxis = null;
       let draggingCrop = false;
       let customRect = null;
+      let zoomRect = null;
+      // Quel rectangle l'overlay dessine/édite actuellement : le format d'affichage
+      // personnalisé et le zoom réutilisent la même interaction de dessin, mais gardent
+      // chacun leur propre rectangle en mémoire (les deux peuvent être actifs à la fois).
+      let cropTarget = null; // "aspect" | "zoom" | null
       let customDragMode = null;
       let customHandle = null;
       let customDragStart = null;
@@ -1308,6 +1313,10 @@ const FORMS = {
       let globalActions = [];
       let currentSegmentActions = [];
       let trackEls = null;
+
+      function activeRect() { return cropTarget === "zoom" ? zoomRect : customRect; }
+      function setActiveRect(rect) { if (cropTarget === "zoom") zoomRect = rect; else customRect = rect; }
+      function hasZoomWork() { return !!zoomRect; }
 
       const aspectButtons = () => `
         <div class="orientation-grid">
@@ -1365,6 +1374,18 @@ const FORMS = {
         <p class="studio-form-note" id="aspectHint" hidden>Glissez le cadre sur l'aperçu pour choisir la zone conservée.</p>
         <p class="studio-form-note" id="customHint" hidden>Dessinez un cadre sur l'aperçu, puis ajustez-le par les coins ou en le déplaçant.</p>
 
+        <h4 class="studio-subheading" style="margin-top:18px;">Zoom</h4>
+        <div class="orientation-grid" style="grid-template-columns: repeat(2, 1fr);">
+          <button type="button" class="orientation-btn active" data-zoom="off">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5" stroke-dasharray="2.5 2"/></svg>
+            <span>Aucun</span>
+          </button>
+          <button type="button" class="orientation-btn" data-zoom="custom">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.2 10.2L13.5 13.5"/></svg>
+            <span>Zone libre</span>
+          </button>
+        </div>
+
         <div class="mode-toggle" style="margin-top:16px;">
           <button type="button" class="mode-toggle-btn active" data-mode="global">Orientation globale</button>
           <button type="button" class="mode-toggle-btn" data-mode="segments">Par morceau</button>
@@ -1418,6 +1439,21 @@ const FORMS = {
       }
 
       function updateCropBox() {
+        if (cropTarget === "zoom") {
+          panelCropOverlay.hidden = false;
+          panelCropOverlay.classList.add("drawable");
+          panelCropBox.classList.add("resizable");
+          aspectHint.hidden = true;
+          customHint.hidden = false;
+          if (!zoomRect) { panelCropBox.hidden = true; return; }
+          const w = panelVideo.clientWidth, h = panelVideo.clientHeight;
+          panelCropBox.hidden = false;
+          panelCropBox.style.left = `${zoomRect.x * w}px`;
+          panelCropBox.style.top = `${zoomRect.y * h}px`;
+          panelCropBox.style.width = `${zoomRect.w * w}px`;
+          panelCropBox.style.height = `${zoomRect.h * h}px`;
+          return;
+        }
         if (!selectedAspect) {
           panelCropOverlay.hidden = true;
           panelCropOverlay.classList.remove("drawable");
@@ -1469,13 +1505,16 @@ const FORMS = {
       }
 
       // --- Recadrage : gestionnaires globaux (retirés/reposés à chaque rendu du panneau) ---
+      function isDrawable() { return cropTarget === "zoom" || (cropTarget === "aspect" && selectedAspect === "custom"); }
+
       function onCropBoxDown(e) {
-        if (selectedAspect === "custom") {
-          if (e.target.classList.contains("crop-handle") || !customRect) return;
+        if (isDrawable()) {
+          const rect = activeRect();
+          if (e.target.classList.contains("crop-handle") || !rect) return;
           e.preventDefault();
           customDragMode = "move";
           customDragStart = pointToFraction(e.clientX, e.clientY);
-          customRectStart = { ...customRect };
+          customRectStart = { ...rect };
           return;
         }
         e.preventDefault();
@@ -1483,11 +1522,11 @@ const FORMS = {
       }
 
       function onCropOverlayDown(e) {
-        if (selectedAspect !== "custom" || e.target !== panelCropOverlay) return;
+        if (!isDrawable() || e.target !== panelCropOverlay) return;
         e.preventDefault();
         customDragMode = "draw";
         customDragStart = pointToFraction(e.clientX, e.clientY);
-        customRect = { x: customDragStart.x, y: customDragStart.y, w: 0, h: 0 };
+        setActiveRect({ x: customDragStart.x, y: customDragStart.y, w: 0, h: 0 });
         updateCropBox();
       }
 
@@ -1495,16 +1534,16 @@ const FORMS = {
         if (customDragMode) {
           const cur = pointToFraction(e.clientX, e.clientY);
           if (customDragMode === "draw") {
-            customRect = { x: Math.min(customDragStart.x, cur.x), y: Math.min(customDragStart.y, cur.y), w: Math.abs(cur.x - customDragStart.x), h: Math.abs(cur.y - customDragStart.y) };
+            setActiveRect({ x: Math.min(customDragStart.x, cur.x), y: Math.min(customDragStart.y, cur.y), w: Math.abs(cur.x - customDragStart.x), h: Math.abs(cur.y - customDragStart.y) });
           } else if (customDragMode === "move") {
             const dx = cur.x - customDragStart.x, dy = cur.y - customDragStart.y;
-            customRect = {
+            setActiveRect({
               x: Math.max(0, Math.min(1 - customRectStart.w, customRectStart.x + dx)),
               y: Math.max(0, Math.min(1 - customRectStart.h, customRectStart.y + dy)),
               w: customRectStart.w, h: customRectStart.h,
-            };
+            });
           } else if (customDragMode === "resize") {
-            customRect = resizeCustomRect(customRectStart, customHandle, cur);
+            setActiveRect(resizeCustomRect(customRectStart, customHandle, cur));
           }
           updateCropBox();
         }
@@ -1525,9 +1564,12 @@ const FORMS = {
       }
 
       function onWindowPointerUp() {
-        if (customDragMode === "draw" && customRect && (customRect.w < MIN_CUSTOM || customRect.h < MIN_CUSTOM)) {
-          customRect = null;
-          updateCropBox();
+        if (customDragMode === "draw") {
+          const rect = activeRect();
+          if (rect && (rect.w < MIN_CUSTOM || rect.h < MIN_CUSTOM)) {
+            setActiveRect(null);
+            updateCropBox();
+          }
         }
         customDragMode = null;
         customHandle = null;
@@ -1537,13 +1579,14 @@ const FORMS = {
       panelCropBox.addEventListener("pointerdown", onCropBoxDown);
       panelCropBox.querySelectorAll(".crop-handle").forEach((handle) => {
         handle.addEventListener("pointerdown", (e) => {
-          if (selectedAspect !== "custom" || !customRect) return;
+          const rect = activeRect();
+          if (!isDrawable() || !rect) return;
           e.preventDefault();
           e.stopPropagation();
           customDragMode = "resize";
           customHandle = handle.dataset.handle;
           customDragStart = pointToFraction(e.clientX, e.clientY);
-          customRectStart = { ...customRect };
+          customRectStart = { ...rect };
         });
       });
       panelCropOverlay.addEventListener("pointerdown", onCropOverlayDown);
@@ -1563,7 +1606,26 @@ const FORMS = {
           selectedAspect = btn.dataset.aspect;
           container.querySelectorAll('[data-aspect]').forEach((b) => b.classList.toggle("active", b === btn));
           aspectPos = 0.5;
-          if (selectedAspect === "custom" && !customRect) customRect = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+          if (selectedAspect === "custom") {
+            cropTarget = "aspect";
+            if (!customRect) customRect = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+          } else if (cropTarget === "aspect") {
+            cropTarget = zoomRect ? "zoom" : null;
+          }
+          updateCropBox();
+        });
+      });
+
+      container.querySelectorAll('[data-zoom]').forEach((btn) => {
+        btn.addEventListener("click", () => {
+          container.querySelectorAll('[data-zoom]').forEach((b) => b.classList.toggle("active", b === btn));
+          if (btn.dataset.zoom === "custom") {
+            cropTarget = "zoom";
+            if (!zoomRect) zoomRect = { x: 0.2, y: 0.2, w: 0.6, h: 0.6 };
+          } else {
+            zoomRect = null;
+            if (cropTarget === "zoom") cropTarget = selectedAspect === "custom" ? "aspect" : null;
+          }
           updateCropBox();
         });
       });
@@ -1612,6 +1674,7 @@ const FORMS = {
         list.innerHTML = track.segments.map((seg, i) => {
           const tags = seg.actions.map((a) => ACTION_LABELS[a]);
           if (seg.aspectRatio) tags.push(ASPECT_LABELS[seg.aspectRatio]);
+          if (seg.zoomRect) tags.push("Zoom");
           return `
           <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
             <span>
@@ -1644,8 +1707,8 @@ const FORMS = {
       });
 
       document.getElementById("orientAddSegmentBtn")?.addEventListener("click", () => {
-        if (currentSegmentActions.length === 0 && !hasAspectWork()) {
-          statusEl.textContent = "Choisissez au moins une orientation ou un format pour ce morceau.";
+        if (currentSegmentActions.length === 0 && !hasAspectWork() && !hasZoomWork()) {
+          statusEl.textContent = "Choisissez au moins une orientation, un format ou un zoom pour ce morceau.";
           statusEl.className = "status error";
           return;
         }
@@ -1653,6 +1716,7 @@ const FORMS = {
         track.segments.push({
           start: track.start, end: track.end, actions: [...currentSegmentActions],
           aspectRatio: selectedAspect || null, aspectPos, cropRect: selectedAspect === "custom" ? customRect : null,
+          zoomRect: zoomRect || null,
         });
         track.segments.sort((a, b) => a.start - b.start);
         renderOrientSegments();
@@ -1666,10 +1730,10 @@ const FORMS = {
       });
 
       track = { duration: activeDuration(), start: 0, end: activeDuration(), segments: [], dragging: null };
-      this._getState = () => ({ mode, selectedAspect, aspectPos, customRect, globalActions, hasAspectWork });
+      this._getState = () => ({ mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork });
     },
     collect() {
-      const { mode, selectedAspect, aspectPos, customRect, globalActions, hasAspectWork } = this._getState();
+      const { mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork } = this._getState();
       if (mode === "segments") {
         if (!track.segments.length) throw new Error("Ajoutez au moins un morceau.");
         return {
@@ -1679,10 +1743,13 @@ const FORMS = {
             aspect_ratio: s.aspectRatio === "custom" ? null : s.aspectRatio,
             aspect_position: s.aspectPos,
             crop_rect: s.aspectRatio === "custom" ? s.cropRect : null,
+            zoom_rect: s.zoomRect || null,
           })),
         };
       }
-      if (globalActions.length === 0 && !hasAspectWork()) throw new Error("Choisissez au moins une orientation ou un format d'affichage.");
+      if (globalActions.length === 0 && !hasAspectWork() && !hasZoomWork()) {
+        throw new Error("Choisissez au moins une orientation, un format d'affichage ou un zoom.");
+      }
       const params = { mode: "single", actions: globalActions };
       if (selectedAspect === "custom" && customRect) {
         params.crop_rect = customRect;
@@ -1690,6 +1757,7 @@ const FORMS = {
         params.aspect_ratio = selectedAspect;
         params.aspect_position = aspectPos;
       }
+      if (zoomRect) params.zoom_rect = zoomRect;
       return params;
     },
     cleanup() {
