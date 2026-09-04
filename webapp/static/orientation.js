@@ -466,6 +466,8 @@ function handleFile(file) {
     // Pour un fichier chargé depuis un projet existant, `preview.duration` (calculé par le
     // navigateur à partir des métadonnées du conteneur) peut être imprécis, voire erroné, sur
     // certains fichiers générés (ex : issus d'une concaténation). On préfère alors la durée
+    // exacte mesurée côté serveur (ffprobe), transportée via `file.knownDuration`.
+    mediaDuration = file.knownDuration && isFinite(file.knownDuration) ? file.knownDuration : preview.duration;
     startTime = 0;
     endTime = mediaDuration;
 
