@@ -694,6 +694,9 @@ async def api_orientation(
         try:
             parsed_zoom_rect = json.loads(zoom_rect)
         except json.JSONDecodeError as e:
+            raise HTTPException(400, "Le champ 'zoom_rect' doit être un JSON valide.") from e
+        _validate_crop_rect(parsed_zoom_rect)
+
     action_list = None
     pairs = None
 
@@ -708,8 +711,8 @@ async def api_orientation(
         for a in action_list:
             if a not in ORIENTATION_ACTIONS:
                 raise HTTPException(400, f"Action non supportée : {a}")
-        if not action_list and not aspect_ratio and not parsed_crop_rect:
-            raise HTTPException(400, "Choisissez au moins une action ou un format d'affichage.")
+        if not action_list and not aspect_ratio and not parsed_crop_rect and not parsed_zoom_rect:
+            raise HTTPException(400, "Choisissez au moins une action, un zoom ou un format d'affichage.")
     else:
         try:
             seg_list = json.loads(segments or "[]")
@@ -726,6 +729,7 @@ async def api_orientation(
             seg_aspect = seg.get("aspect_ratio")
             seg_pos = seg.get("aspect_position", 0.5)
             seg_crop_rect = seg.get("crop_rect")
+            seg_zoom_rect = seg.get("zoom_rect")
 
             if not is_valid_time(start or "") or not is_valid_time(end or ""):
                 raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
@@ -738,13 +742,15 @@ async def api_orientation(
                 raise HTTPException(400, f"Format non supporté dans un segment : {seg_aspect}")
             if seg_crop_rect:
                 _validate_crop_rect(seg_crop_rect)
-            if not seg_actions and not seg_aspect and not seg_crop_rect:
-                raise HTTPException(400, "Chaque segment doit avoir au moins une action ou un format.")
+            if seg_zoom_rect:
+                _validate_crop_rect(seg_zoom_rect)
+            if not seg_actions and not seg_aspect and not seg_crop_rect and not seg_zoom_rect:
+                raise HTTPException(400, "Chaque segment doit avoir au moins une action, un zoom ou un format.")
 
             pairs.append({
                 "start": start, "end": end, "actions": seg_actions,
                 "aspect_ratio": seg_aspect, "aspect_position": seg_pos,
-                "crop_rect": seg_crop_rect,
+                "crop_rect": seg_crop_rect, "zoom_rect": seg_zoom_rect,
             })
 
     job_id = uuid.uuid4().hex
@@ -763,7 +769,7 @@ async def api_orientation(
         target=_run_orientation_job,
         args=(
             job_id, video_path, output_path, video.filename, mode,
-            action_list, aspect_ratio, aspect_position, parsed_crop_rect, pairs,
+            action_list, aspect_ratio, aspect_position, parsed_crop_rect, parsed_zoom_rect, pairs,
         ),
         daemon=True,
     )
