@@ -26,7 +26,7 @@ AUDIO_EXTS = {".mp3", ".wav", ".aac", ".flac", ".m4a"}
 STEP_LABELS = {
     "trim": "Découpage",
     "speed": "Vitesse",
-    "orientation": "Transformation",
+    "orientation": "Screen",
     "compress": "Compression",
     "extract_audio": "Audio",
     "noise_removal": "Suppression bruit",
