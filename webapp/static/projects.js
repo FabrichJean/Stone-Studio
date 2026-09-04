@@ -1,5 +1,7 @@
 let allProjects = [];
 let projectsViewMode = localStorage.getItem("ss_view_mode") || "list";
+let activeTool = "all";
+let searchQuery = "";
 
 function projectRowHtml(p) {
   const files = p.is_source
@@ -34,6 +36,15 @@ function projectCardHtml(p) {
     </div>`;
 }
 
+function filteredProjects() {
+  const q = searchQuery.trim().toLowerCase();
+  return allProjects.filter((p) => {
+    if (activeTool !== "all" && p.tool !== activeTool) return false;
+    if (!q) return true;
+    return (p.output_name || "").toLowerCase().includes(q) || (p.input_name || "").toLowerCase().includes(q);
+  });
+}
+
 function renderProjects() {
   const container = document.getElementById("projectsContainer");
 
@@ -43,8 +54,15 @@ function renderProjects() {
     return;
   }
 
+  const projects = filteredProjects();
+  if (!projects.length) {
+    container.className = "";
+    container.innerHTML = `<div class="panel projects-no-results">Aucun fichier ne correspond à cette recherche.</div>`;
+    return;
+  }
+
   container.className = projectsViewMode === "card" ? "projects-grid" : "projects-list";
-  container.innerHTML = allProjects.map((p) => (projectsViewMode === "card" ? projectCardHtml(p) : projectRowHtml(p))).join("");
+  container.innerHTML = projects.map((p) => (projectsViewMode === "card" ? projectCardHtml(p) : projectRowHtml(p))).join("");
 }
 
 function setProjectsViewMode(mode) {
@@ -61,6 +79,20 @@ document.querySelectorAll("#viewToggle .view-toggle-btn").forEach((b) => {
   b.addEventListener("click", () => setProjectsViewMode(b.dataset.view));
 });
 
+/* ---------- Onglets par outil ---------- */
+
+// "Importé" et "Studio" en premier (les sources les plus courantes), le reste des outils
+// triés alphabétiquement par leur libellé plutôt que par ordre d'apparition arbitraire.
+const TOOL_TAB_PRIORITY = ["upload", "studio_chain"];
+
+function toolLabelFor(tool) {
+  const record = allProjects.find((p) => p.tool === tool);
+  return (record && record.tool_label) || tool;
+}
+
+function buildTabs() {
+  const counts = {};
+  allProjects.forEach((p) => { counts[p.tool] = (counts[p.tool] || 0) + 1; });
 fetch("/api/projects")
   .then((r) => r.json())
   .then((data) => {
