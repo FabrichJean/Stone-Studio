@@ -41,7 +41,7 @@ from screen_record import (  # noqa: E402
 from noise_removal import LEVELS as NOISE_LEVELS, remove_noise  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
-from studio_chain import ChainError, concat_clips, run_chain  # noqa: E402
+from studio_chain import concat_clips, run_chain  # noqa: E402
 
 UPLOADS_DIR = ROOT / "uploads"
 OUTPUT_DIR = ROOT / "output"
@@ -192,7 +192,7 @@ def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], base_name
     with tempfile.TemporaryDirectory() as tmp:
         try:
             result_path = run_chain(source_path, chain, Path(tmp), on_progress)
-        except ChainError as e:
+        except Exception as e:
             STUDIO_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
             return
 
@@ -246,7 +246,7 @@ def _run_timeline_export_job(job_id: str, paths: list[Path], base_name: str) -> 
     with tempfile.TemporaryDirectory() as tmp:
         try:
             result_path = concat_clips(paths, Path(tmp), on_progress)
-        except ChainError as e:
+        except Exception as e:
             STUDIO_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
             return
 
