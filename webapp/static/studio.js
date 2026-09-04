@@ -1313,6 +1313,7 @@ const FORMS = {
       let globalActions = [];
       let currentSegmentActions = [];
       let trackEls = null;
+      let keepFull = false;
 
       function activeRect() { return cropTarget === "zoom" ? zoomRect : customRect; }
       function setActiveRect(rect) { if (cropTarget === "zoom") zoomRect = rect; else customRect = rect; }
@@ -1403,6 +1404,13 @@ const FORMS = {
             <button type="button" class="btn-secondary" id="orientAddSegmentBtn">Ajouter ce morceau</button>
           </div>
           <div class="segments-list" id="orientSegmentsList"></div>
+
+          <h4 class="studio-subheading" style="margin-top:14px;">Sortie</h4>
+          <div class="mode-toggle" id="orientSegmentsOutputToggle">
+            <button type="button" class="mode-toggle-btn active" data-keep-full="false">Découper</button>
+            <button type="button" class="mode-toggle-btn" data-keep-full="true">Garder l'ensemble</button>
+          </div>
+          <p class="studio-form-note" id="orientSegmentsOutputHint">Le résultat ne contiendra que les morceaux sélectionnés, mis bout à bout.</p>
         </div>`;
 
       const globalPanel = document.getElementById("orientGlobalPanel");
@@ -1701,6 +1709,16 @@ const FORMS = {
         });
       }
 
+      document.getElementById("orientSegmentsOutputToggle")?.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          keepFull = btn.dataset.keepFull === "true";
+          btn.parentElement.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+          document.getElementById("orientSegmentsOutputHint").textContent = keepFull
+            ? "Le résultat gardera toute la durée d'origine : seuls les morceaux sélectionnés seront transformés, le reste restera inchangé."
+            : "Le résultat ne contiendra que les morceaux sélectionnés, mis bout à bout.";
+        });
+      });
+
       document.getElementById("orientPreviewBtn")?.addEventListener("click", () => {
         applyPreviewTransform(currentSegmentActions);
         playRanges(panelVideo, [{ start: track.start, end: track.end }]);
@@ -1730,14 +1748,15 @@ const FORMS = {
       });
 
       track = { duration: activeDuration(), start: 0, end: activeDuration(), segments: [], dragging: null };
-      this._getState = () => ({ mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork });
+      this._getState = () => ({ mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork, keepFull });
     },
     collect() {
-      const { mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork } = this._getState();
+      const { mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork, keepFull } = this._getState();
       if (mode === "segments") {
         if (!track.segments.length) throw new Error("Ajoutez au moins un morceau.");
         return {
           mode: "segments",
+          keep_full: keepFull,
           segments: track.segments.map((s) => ({
             start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end), actions: s.actions,
             aspect_ratio: s.aspectRatio === "custom" ? null : s.aspectRatio,
