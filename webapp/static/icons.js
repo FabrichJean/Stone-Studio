@@ -34,7 +34,7 @@ const TOOL_DESTINATIONS = [
   { key: "extract_audio", path: "/", label: "Extraction audio", icon: "headphones" },
   { key: "trim_media", path: "/trim", label: "Trim media", icon: "scissors" },
   { key: "speed_media", path: "/speed", label: "Speed", icon: "speed" },
-  { key: "orientation", path: "/orientation", label: "Orientation", icon: "orientation" },
+  { key: "orientation", path: "/orientation", label: "Screen", icon: "orientation" },
   { key: "compress_media", path: "/compress", label: "Compression vidéo", icon: "compress" },
   { key: "noise_removal", path: "/noise-removal", label: "Suppression bruit", icon: "noise" },
 ];
