@@ -76,6 +76,21 @@
         <p id="customHint" class="trim-duration" hidden>Dessinez un cadre sur l'aperçu, puis ajustez-le par les coins ou en le déplaçant.</p>
       </div>
 
+      <div id="zoomSection" class="params" hidden>
+        <h3>Zoom</h3>
+        <div class="orientation-grid" id="zoomGrid">
+          <button type="button" class="orientation-btn active" data-zoom="off">
+            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5" stroke-dasharray="2.5 2"/></svg>
+            <span>Aucun</span>
+          </button>
+          <button type="button" class="orientation-btn" data-zoom="custom">
+            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.2 10.2L13.5 13.5"/></svg>
+            <span>Zone libre</span>
+          </button>
+        </div>
+        <p id="zoomHint" class="trim-duration" hidden>Dessinez la zone à zoomer sur l'aperçu, puis ajustez-la par les coins ou en la déplaçant.</p>
+      </div>
+
       <div id="modeSection" class="params" hidden>
         <div class="mode-toggle" id="modeToggle">
           <button type="button" class="mode-toggle-btn active" data-mode="global">Orientation globale</button>
