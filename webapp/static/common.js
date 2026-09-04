@@ -59,6 +59,7 @@ function renderPickerList(filter, onSelect) {
         const res = await fetch(`/api/projects/${record.id}/download`);
         const blob = await res.blob();
         const file = new File([blob], record.output_name, { type: blob.type });
+        file.knownDuration = record.duration || null;
         closeProjectPicker();
         onSelect(file);
       } catch {
@@ -137,7 +138,13 @@ async function loadProjectAsFile(projectId) {
   if (!recordRes.ok || !blobRes.ok) throw new Error("Fichier introuvable");
   const record = await recordRes.json();
   const blob = await blobRes.blob();
-  return new File([blob], record.output_name, { type: blob.type });
+  const file = new File([blob], record.output_name, { type: blob.type });
+  // Certains fichiers générés (concaténation, morceaux combinés...) ont des métadonnées de
+  // conteneur imprécises : le navigateur peut alors mal estimer `video.duration` (parfois du
+  // simple au double). On transporte la durée exacte mesurée côté serveur (ffprobe) avec le
+  // fichier, pour que les pages outils puissent s'y fier plutôt qu'à l'estimation du navigateur.
+  file.knownDuration = record.duration || null;
+  return file;
 }
 
 // À appeler au chargement de chaque page d'outil : si l'URL contient ?project=<id>
