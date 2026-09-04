@@ -355,6 +355,23 @@ def download_project(project_id: str):
     return FileResponse(path, filename=record["output_name"], media_type="application/octet-stream")
 
 
+@app.delete("/api/projects/{project_id}")
+def delete_project(project_id: str):
+    projects = load_projects()
+    record = next((p for p in projects if p["id"] == project_id), None)
+    if not record:
+        raise HTTPException(404, "Projet introuvable")
+
+    path = DIRS.get(record.get("output_dir", "output"), OUTPUT_DIR) / record["output_file"]
+    path.unlink(missing_ok=True)
+    (THUMBS_DIR / f"{project_id}.jpg").unlink(missing_ok=True)
+    (THUMBS_DIR / f"{project_id}_filmstrip.jpg").unlink(missing_ok=True)
+
+    projects = [p for p in projects if p["id"] != project_id]
+    PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
+    return {"status": "deleted"}
+
+
 @app.get("/api/projects/{project_id}/thumbnail")
 def project_thumbnail(project_id: str):
     path = THUMBS_DIR / f"{project_id}.jpg"
