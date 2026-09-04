@@ -95,7 +95,7 @@ TOOL_LABELS = {
     "extract_audio": "Extraction audio",
     "trim_media": "Trim media",
     "speed_media": "Speed",
-    "orientation": "Orientation",
+    "orientation": "Screen",
     "screen_record": "Enregistrement écran",
     "noise_removal": "Suppression bruit",
     "compress_media": "Compression vidéo",
