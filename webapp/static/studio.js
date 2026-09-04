@@ -1884,7 +1884,36 @@ const FORMS = {
     }, 300);
   }
 
+  // Permet d'arriver directement sur Studio avec un projet déjà chargé (ex: depuis la page
+  // Projets), sans passer par l'écran d'import.
+  function loadProjectFromId(projectId) {
+    fetch(`/api/projects/${projectId}`)
+      .then((r) => { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then((record) => {
+        fileNameEl.textContent = record.output_name;
+        fileMetaEl.textContent = formatBytesCommon(record.output_size);
+        studioEmpty.hidden = true;
+        studioMain.hidden = false;
+        timeline = [{
+          id: record.id, name: record.output_name, mediaType: record.media_type,
+          size: record.output_size, duration: record.duration, hasFilmstrip: record.has_filmstrip,
+        }];
+        activeIndex = 0;
+        setActiveClip(0);
+      })
+      .catch(() => {
+        statusEl.textContent = "Impossible de charger ce projet.";
+        statusEl.className = "status error";
+      });
+  }
+
   renderTabs();
   selectAction(selectedType);
   renderTimeline();
+
+  const deepLinkProjectId = new URLSearchParams(window.location.search).get("project");
+  if (deepLinkProjectId) {
+    window.history.replaceState({}, "", window.location.pathname);
+    loadProjectFromId(deepLinkProjectId);
+  }
 })();
