@@ -633,7 +633,7 @@ def _validate_crop_rect(rect) -> None:
 def _run_orientation_job(
     job_id: str, video_path: Path, output_path: Path, filename: str, mode: str,
     action_list: list[str] | None, aspect_ratio: str | None, aspect_position: float,
-    parsed_crop_rect: dict | None, pairs: list[dict] | None,
+    parsed_crop_rect: dict | None, parsed_zoom_rect: dict | None, pairs: list[dict] | None,
 ) -> None:
     def on_progress(frac: float) -> None:
         ORIENTATION_JOBS[job_id]["percent"] = round(frac * 100, 1)
@@ -642,12 +642,15 @@ def _run_orientation_job(
         if mode == "global":
             change_orientation(
                 video_path, output_path, action_list or [],
-                aspect_ratio=aspect_ratio, aspect_position=aspect_position, crop_rect=parsed_crop_rect,
+                aspect_ratio=aspect_ratio, aspect_position=aspect_position,
+                crop_rect=parsed_crop_rect, zoom_rect=parsed_zoom_rect,
                 on_progress=on_progress,
             )
         else:
             orient_segments(video_path, pairs, output_path, on_progress)
-    except RuntimeError as e:
+    except Exception as e:
+        # Toute exception (pas seulement RuntimeError) doit marquer le job en erreur, sinon
+        # elle tue silencieusement ce thread et le frontend sonde indéfiniment un job bloqué.
         ORIENTATION_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
         return
 
@@ -671,6 +674,7 @@ async def api_orientation(
     aspect_ratio: str | None = Form(None),  # ex: "portrait_9_16" (mode=global uniquement)
     aspect_position: float = Form(0.5),  # 0..1 — position du recadrage le long de l'axe rogné
     crop_rect: str | None = Form(None),  # JSON {"x","y","w","h"} fractions 0..1 (mode=global, format personnalisé)
+    zoom_rect: str | None = Form(None),  # JSON {"x","y","w","h"} fractions 0..1 (mode=global, zoom)
 ):
     if mode not in ("global", "segments"):
         raise HTTPException(400, "Mode invalide (global ou segments).")
@@ -685,6 +689,11 @@ async def api_orientation(
             raise HTTPException(400, "Le champ 'crop_rect' doit être un JSON valide.") from e
         _validate_crop_rect(parsed_crop_rect)
 
+    parsed_zoom_rect = None
+    if zoom_rect:
+        try:
+            parsed_zoom_rect = json.loads(zoom_rect)
+        except json.JSONDecodeError as e:
     action_list = None
     pairs = None
 
