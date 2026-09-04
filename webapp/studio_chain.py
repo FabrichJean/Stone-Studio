@@ -68,7 +68,7 @@ def _run_orientation(inp: Path, out: Path, params: dict, on_progress: ProgressCa
         segments = params.get("segments") or []
         if not segments:
             raise ChainError("Screen : ajoutez au moins un morceau.")
-        orient_segments(inp, segments, out, on_progress=on_progress)
+        orient_segments(inp, segments, out, on_progress=on_progress, keep_full=bool(params.get("keep_full", False)))
         return
     actions = params.get("actions") or []
     aspect_ratio = params.get("aspect_ratio") or None
