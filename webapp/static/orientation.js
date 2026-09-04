@@ -230,11 +230,12 @@ function updateCropBox() {
 
 cropBox.addEventListener("pointerdown", (e) => {
   if (isDrawable()) {
-    if (e.target.classList.contains("crop-handle") || !customRect) return;
+    const rect = activeRect();
+    if (e.target.classList.contains("crop-handle") || !rect) return;
     e.preventDefault();
     customDragMode = "move";
     customDragStart = pointToFraction(e.clientX, e.clientY);
-    customRectStart = { ...customRect };
+    customRectStart = { ...rect };
     return;
   }
   e.preventDefault();
@@ -243,22 +244,23 @@ cropBox.addEventListener("pointerdown", (e) => {
 
 cropBox.querySelectorAll(".crop-handle").forEach((handle) => {
   handle.addEventListener("pointerdown", (e) => {
-    if (selectedAspect !== "custom" || !customRect) return;
+    const rect = activeRect();
+    if (!isDrawable() || !rect) return;
     e.preventDefault();
     e.stopPropagation();
     customDragMode = "resize";
     customHandle = handle.dataset.handle;
     customDragStart = pointToFraction(e.clientX, e.clientY);
-    customRectStart = { ...customRect };
+    customRectStart = { ...rect };
   });
 });
 
 cropOverlay.addEventListener("pointerdown", (e) => {
-  if (selectedAspect !== "custom" || e.target !== cropOverlay) return;
+  if (!isDrawable() || e.target !== cropOverlay) return;
   e.preventDefault();
   customDragMode = "draw";
   customDragStart = pointToFraction(e.clientX, e.clientY);
-  customRect = { x: customDragStart.x, y: customDragStart.y, w: 0, h: 0 };
+  setActiveRect({ x: customDragStart.x, y: customDragStart.y, w: 0, h: 0 });
   updateCropBox();
 });
 
@@ -267,32 +269,35 @@ window.addEventListener("pointermove", (e) => {
   const cur = pointToFraction(e.clientX, e.clientY);
 
   if (customDragMode === "draw") {
-    customRect = {
+    setActiveRect({
       x: Math.min(customDragStart.x, cur.x),
       y: Math.min(customDragStart.y, cur.y),
       w: Math.abs(cur.x - customDragStart.x),
       h: Math.abs(cur.y - customDragStart.y),
-    };
+    });
   } else if (customDragMode === "move") {
     const dx = cur.x - customDragStart.x;
     const dy = cur.y - customDragStart.y;
-    customRect = {
+    setActiveRect({
       x: Math.max(0, Math.min(1 - customRectStart.w, customRectStart.x + dx)),
       y: Math.max(0, Math.min(1 - customRectStart.h, customRectStart.y + dy)),
       w: customRectStart.w,
       h: customRectStart.h,
-    };
+    });
   } else if (customDragMode === "resize") {
-    customRect = resizeCustomRect(customRectStart, customHandle, cur);
+    setActiveRect(resizeCustomRect(customRectStart, customHandle, cur));
   }
 
   updateCropBox();
 });
 
 window.addEventListener("pointerup", () => {
-  if (customDragMode === "draw" && customRect && (customRect.w < MIN_CUSTOM || customRect.h < MIN_CUSTOM)) {
-    customRect = null; // clic sans glisser : annule le dessin
-    updateCropBox();
+  if (customDragMode === "draw") {
+    const rect = activeRect();
+    if (rect && (rect.w < MIN_CUSTOM || rect.h < MIN_CUSTOM)) {
+      setActiveRect(null); // clic sans glisser : annule le dessin
+      updateCropBox();
+    }
   }
   customDragMode = null;
   customHandle = null;
@@ -330,8 +335,26 @@ aspectGrid.querySelectorAll(".orientation-btn").forEach((btn) => {
     selectedAspect = btn.dataset.aspect;
     aspectGrid.querySelectorAll(".orientation-btn").forEach((b) => b.classList.toggle("active", b === btn));
     aspectPos = 0.5;
-    if (selectedAspect === "custom" && !customRect) {
-      customRect = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+    if (selectedAspect === "custom") {
+      cropTarget = "aspect";
+      if (!customRect) customRect = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+    } else if (cropTarget === "aspect") {
+      cropTarget = zoomRect ? "zoom" : null;
+    }
+    updateCropBox();
+    updateApplyState();
+  });
+});
+
+zoomGrid.querySelectorAll(".orientation-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    zoomGrid.querySelectorAll(".orientation-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    if (btn.dataset.zoom === "custom") {
+      cropTarget = "zoom";
+      if (!zoomRect) zoomRect = { x: 0.2, y: 0.2, w: 0.6, h: 0.6 };
+    } else {
+      zoomRect = null;
+      if (cropTarget === "zoom") cropTarget = selectedAspect === "custom" ? "aspect" : null;
     }
     updateCropBox();
     updateApplyState();
@@ -419,12 +442,16 @@ function handleFile(file) {
   selectedAspect = "";
   aspectPos = 0.5;
   customRect = null;
+  zoomRect = null;
+  cropTarget = null;
   customDragMode = null;
   cropOverlay.hidden = true;
   aspectHint.hidden = true;
   customHint.hidden = true;
+  zoomHint.hidden = true;
   document.querySelectorAll(".orientation-btn").forEach((b) => b.classList.remove("active"));
   aspectGrid.querySelector('.orientation-btn[data-aspect=""]').classList.add("active");
+  zoomGrid.querySelector('.orientation-btn[data-zoom="off"]').classList.add("active");
   renderSegments();
 
   const url = URL.createObjectURL(file);
@@ -432,6 +459,7 @@ function handleFile(file) {
   videoStage.hidden = false;
   dropzone.hidden = true;
   aspectSection.hidden = false;
+  zoomSection.hidden = false;
   modeSection.hidden = false;
 
   preview.onloadedmetadata = () => {
@@ -460,7 +488,7 @@ function handleFile(file) {
 /* ---------- Bascule de mode ---------- */
 
 function updateApplyState() {
-  const hasWork = mode === "global" ? globalActions.length > 0 || hasAspectWork() : segments.length > 0;
+  const hasWork = mode === "global" ? globalActions.length > 0 || hasAspectWork() || hasZoomWork() : segments.length > 0;
   applyBtn.disabled = !selectedFile || !hasWork;
 }
 
@@ -535,6 +563,7 @@ function renderSegments() {
     .map((seg, i) => {
       const tags = [...seg.actions.map((a) => ACTION_LABELS[a])];
       if (seg.aspectRatio) tags.push(ASPECT_LABELS[seg.aspectRatio]);
+      if (seg.zoomRect) tags.push("Zoom");
       return `
       <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
         <span>
@@ -657,8 +686,8 @@ previewBtn.addEventListener("click", () => {
 });
 
 addSegmentBtn.addEventListener("click", () => {
-  if (currentSegmentActions.length === 0 && !hasAspectWork()) {
-    status.textContent = "Choisissez au moins une orientation ou un format pour ce morceau.";
+  if (currentSegmentActions.length === 0 && !hasAspectWork() && !hasZoomWork()) {
+    status.textContent = "Choisissez au moins une orientation, un zoom ou un format pour ce morceau.";
     status.className = "status error";
     return;
   }
@@ -670,6 +699,7 @@ addSegmentBtn.addEventListener("click", () => {
     aspectRatio: selectedAspect || null,
     aspectPos: aspectPos,
     cropRect: selectedAspect === "custom" ? customRect : null,
+    zoomRect: zoomRect || null,
   });
   segments.sort((a, b) => a.start - b.start);
   renderSegments();
@@ -743,6 +773,7 @@ applyBtn.addEventListener("click", async () => {
       formData.append("aspect_ratio", selectedAspect);
       formData.append("aspect_position", aspectPos);
     }
+    if (zoomRect) formData.append("zoom_rect", JSON.stringify(zoomRect));
   } else {
     formData.append(
       "segments",
@@ -754,6 +785,7 @@ applyBtn.addEventListener("click", async () => {
           aspect_ratio: s.aspectRatio === "custom" ? null : s.aspectRatio,
           aspect_position: s.aspectPos,
           crop_rect: s.aspectRatio === "custom" ? s.cropRect : null,
+          zoom_rect: s.zoomRect || null,
         }))
       )
     );
