@@ -229,12 +229,37 @@ def apply_aspect_ratio(input_path: Path, output_path: Path, ratio_key: str, pos:
         raise RuntimeError(result.stderr.strip())
 
 
+def _extract_passthrough(
+    input_path: Path, output_path: Path, start: str, end: str,
+    on_progress: ProgressCallback | None, progress_range: tuple[float, float],
+) -> None:
+    """Extrait un intervalle de la vidéo source tel quel, sans aucune transformation —
+    utilisé pour les portions non sélectionnées par l'utilisateur en mode "morceaux, garder
+    l'ensemble" (le reste de la vidéo doit rester inchangé, à sa place)."""
+    trim_expr = f"start={time_to_seconds(start)}:end={time_to_seconds(end)}"
+    cmd = [
+        "ffmpeg", "-y", "-i", str(input_path),
+        "-vf", f"trim={trim_expr},setpts=PTS-STARTPTS",
+        "-filter:a", f"atrim={trim_expr},asetpts=PTS-STARTPTS",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac",
+        str(output_path),
+    ]
+    seg_duration = time_to_seconds(end) - time_to_seconds(start)
+    _run_ffmpeg_progress(cmd, seg_duration, on_progress, *progress_range)
+
+
 def orient_segments(
-    input_path: Path, segments: list[dict], output_path: Path, on_progress: ProgressCallback | None = None
+    input_path: Path, segments: list[dict], output_path: Path,
+    on_progress: ProgressCallback | None = None, keep_full: bool = False,
 ) -> None:
     """segments: [{"start", "end", "actions": list[str], "aspect_ratio": str|None,
     "aspect_position": float, "crop_rect": dict|None, "zoom_rect": dict|None}, ...] —
     orientation, format d'affichage ET zoom propres à chaque morceau.
+
+    Par défaut (`keep_full=False`), la sortie ne contient que les morceaux sélectionnés,
+    mis bout à bout (le reste de la vidéo est coupé). Avec `keep_full=True`, la sortie garde
+    toute la durée d'origine : les portions non sélectionnées sont réinsérées telles quelles
+    entre les morceaux transformés, à leur place.
 
     Des morceaux avec des rotations ou formats différents produisent des dimensions
     différentes : on harmonise sur la plus grande taille (scale + pad) avant de
@@ -243,7 +268,26 @@ def orient_segments(
     if not segments:
         raise ValueError("Aucun segment fourni.")
 
-    durations = [max(time_to_seconds(s["end"]) - time_to_seconds(s["start"]), 0.01) for s in segments]
+    ordered = sorted(segments, key=lambda s: time_to_seconds(s["start"]))
+
+    parts = ordered
+    if keep_full:
+        full_duration = probe_duration(input_path)
+        if full_duration is None:
+            raise ValueError("Impossible de déterminer la durée de la vidéo source.")
+
+        parts = []
+        cursor_t = 0.0
+        for seg in ordered:
+            s, e = time_to_seconds(seg["start"]), time_to_seconds(seg["end"])
+            if s > cursor_t + 0.05:
+                parts.append({"start": str(cursor_t), "end": str(s), "passthrough": True})
+            parts.append(seg)
+            cursor_t = e
+        if cursor_t < full_duration - 0.05:
+            parts.append({"start": str(cursor_t), "end": str(full_duration), "passthrough": True})
+
+    durations = [max(time_to_seconds(p["end"]) - time_to_seconds(p["start"]), 0.01) for p in parts]
     total = sum(durations)
     # La passe finale d'harmonisation + concaténation prend un temps non négligeable
     # (contrairement au simple stream copy de trim_media) : on lui réserve une vraie part.
@@ -254,17 +298,23 @@ def orient_segments(
         part_paths = []
         cursor = 0.0
 
-        for i, (seg, dur) in enumerate(zip(segments, durations)):
+        for i, (part, dur) in enumerate(zip(parts, durations)):
             part_path = tmp_dir / f"part_{i}{input_path.suffix}"
             span = (dur / total) * trim_budget
-            change_orientation(
-                input_path, part_path,
-                seg.get("actions") or [],
-                seg.get("start"), seg.get("end"),
-                seg.get("aspect_ratio"), seg.get("aspect_position", 0.5),
-                seg.get("crop_rect"), seg.get("zoom_rect"),
-                on_progress=on_progress, progress_range=(cursor, cursor + span),
-            )
+            if part.get("passthrough"):
+                _extract_passthrough(
+                    input_path, part_path, part["start"], part["end"],
+                    on_progress, (cursor, cursor + span),
+                )
+            else:
+                change_orientation(
+                    input_path, part_path,
+                    part.get("actions") or [],
+                    part.get("start"), part.get("end"),
+                    part.get("aspect_ratio"), part.get("aspect_position", 0.5),
+                    part.get("crop_rect"), part.get("zoom_rect"),
+                    on_progress=on_progress, progress_range=(cursor, cursor + span),
+                )
             cursor += span
             part_paths.append(part_path)
 

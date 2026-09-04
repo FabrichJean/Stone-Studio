@@ -634,6 +634,7 @@ def _run_orientation_job(
     job_id: str, video_path: Path, output_path: Path, filename: str, mode: str,
     action_list: list[str] | None, aspect_ratio: str | None, aspect_position: float,
     parsed_crop_rect: dict | None, parsed_zoom_rect: dict | None, pairs: list[dict] | None,
+    keep_full: bool = False,
 ) -> None:
     def on_progress(frac: float) -> None:
         ORIENTATION_JOBS[job_id]["percent"] = round(frac * 100, 1)
@@ -647,7 +648,7 @@ def _run_orientation_job(
                 on_progress=on_progress,
             )
         else:
-            orient_segments(video_path, pairs, output_path, on_progress)
+            orient_segments(video_path, pairs, output_path, on_progress, keep_full=keep_full)
     except Exception as e:
         # Toute exception (pas seulement RuntimeError) doit marquer le job en erreur, sinon
         # elle tue silencieusement ce thread et le frontend sonde indéfiniment un job bloqué.
@@ -675,6 +676,7 @@ async def api_orientation(
     aspect_position: float = Form(0.5),  # 0..1 — position du recadrage le long de l'axe rogné
     crop_rect: str | None = Form(None),  # JSON {"x","y","w","h"} fractions 0..1 (mode=global, format personnalisé)
     zoom_rect: str | None = Form(None),  # JSON {"x","y","w","h"} fractions 0..1 (mode=global, zoom)
+    keep_full: bool = Form(False),  # mode=segments : garder toute la vidéo (portions non sélectionnées inchangées)
 ):
     if mode not in ("global", "segments"):
         raise HTTPException(400, "Mode invalide (global ou segments).")
@@ -770,6 +772,7 @@ async def api_orientation(
         args=(
             job_id, video_path, output_path, video.filename, mode,
             action_list, aspect_ratio, aspect_position, parsed_crop_rect, parsed_zoom_rect, pairs,
+            keep_full,
         ),
         daemon=True,
     )
