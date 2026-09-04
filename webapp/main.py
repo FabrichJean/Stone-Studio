@@ -247,6 +247,9 @@ def _run_timeline_export_job(job_id: str, paths: list[Path], base_name: str) -> 
         try:
             result_path = concat_clips(paths, Path(tmp), on_progress)
         except Exception as e:
+            # Toute exception (pas seulement ChainError) doit marquer le job en erreur, sinon
+            # elle tue silencieusement ce thread et le frontend sonde indéfiniment un job
+            # bloqué à "processing".
             STUDIO_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
             return
 
