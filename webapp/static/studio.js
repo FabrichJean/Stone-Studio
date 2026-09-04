@@ -10,7 +10,7 @@
 const STUDIO_ACTIONS = [
   { type: "trim", label: "Découpage", icon: "scissors" },
   { type: "speed", label: "Vitesse", icon: "speed" },
-  { type: "orientation", label: "Transformation", icon: "orientation" },
+  { type: "orientation", label: "Screen", icon: "orientation" },
   { type: "compress", label: "Compression", icon: "compress" },
   { type: "extract_audio", label: "Audio", icon: "headphones" },
   { type: "noise_removal", label: "Suppression bruit", icon: "noise" },
