@@ -11,7 +11,7 @@ const ICONS = {
   pause: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" stroke="none"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>`,
   noise: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h2l2-4v8l2-4h2l2 3v-6l2 3"/></svg>`,
   record: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>`,
-  orientation: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 5.8A5 5 0 1 0 13 8"/><path d="M12.8 2.5v3.3h-3.3"/></svg>`,
+  orientation: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="8.5" rx="1.3"/><path d="M6 13.5h4M8 11v2.5"/></svg>`,
   compress: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg>`,
 };
 
