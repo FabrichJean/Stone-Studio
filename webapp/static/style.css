@@ -1713,6 +1713,34 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 .projects-search {
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 36px;
+  min-width: 220px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.projects-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-dark);
+  background: none;
+}
+
+.projects-no-results {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
 .projects-list {
   display: flex;
   flex-direction: column;
