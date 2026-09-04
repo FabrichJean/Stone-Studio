@@ -56,6 +56,31 @@
     </div>
 
     <div id="projectsContainer"></div>
+
+    <div id="projectDetailsModal" class="modal-overlay" hidden>
+      <div class="launcher project-details-launcher">
+        <div class="launcher-header">
+          <span class="launcher-title" id="detailsTitle">—</span>
+          <button type="button" class="modal-close" id="detailsClose">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+        <div class="project-details-body">
+          <div class="project-details-preview" id="detailsPreview"></div>
+          <div class="project-details-info">
+            <dl id="detailsInfo" class="project-details-list"></dl>
+            <div class="project-details-actions">
+              <a class="btn-primary" id="detailsDownload" download>
+                <span class="icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M4.5 7l3.5 3.5L11.5 7"/><path d="M2.5 13h11"/></svg></span>
+                Télécharger
+              </a>
+              <button type="button" class="btn-secondary" id="detailsOpenStudio">Ouvrir dans Studio</button>
+              <button type="button" class="btn-secondary project-details-delete" id="detailsDelete">Supprimer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ static_url('icons.js') }}"></script>
