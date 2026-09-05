@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Stone Studio</title>
+<link rel="icon" href="{{ static_url('favicon.ico') }}" sizes="any" />
+<link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}" />
 <script>
   // Applique l'état réduit avant le premier rendu pour éviter un flash de la barre étendue.
   if (localStorage.getItem("ss_sidebar_collapsed") === "1") {
