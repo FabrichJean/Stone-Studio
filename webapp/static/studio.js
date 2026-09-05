@@ -1653,6 +1653,12 @@ const FORMS = {
 
       zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
+          zoomAnimated = btn.dataset.zoomAnimated === "true";
+          zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+          zoomTransitionHint.hidden = !zoomAnimated;
+        });
+      });
+
       globalPanel.querySelectorAll("[data-action]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const idx = globalActions.indexOf(btn.dataset.action);
@@ -1698,7 +1704,7 @@ const FORMS = {
         list.innerHTML = track.segments.map((seg, i) => {
           const tags = seg.actions.map((a) => ACTION_LABELS[a]);
           if (seg.aspectRatio) tags.push(ASPECT_LABELS[seg.aspectRatio]);
-          if (seg.zoomRect) tags.push("Zoom");
+          if (seg.zoomRect) tags.push(seg.zoomAnimated ? "Zoom progressif" : "Zoom");
           return `
           <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
             <span>
@@ -1751,6 +1757,7 @@ const FORMS = {
           start: track.start, end: track.end, actions: [...currentSegmentActions],
           aspectRatio: selectedAspect || null, aspectPos, cropRect: selectedAspect === "custom" ? customRect : null,
           zoomRect: zoomRect || null,
+          zoomAnimated: zoomRect ? zoomAnimated : false,
         });
         track.segments.sort((a, b) => a.start - b.start);
         renderOrientSegments();
@@ -1764,10 +1771,10 @@ const FORMS = {
       });
 
       track = { duration: activeDuration(), start: 0, end: activeDuration(), segments: [], dragging: null };
-      this._getState = () => ({ mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork, keepFull });
+      this._getState = () => ({ mode, selectedAspect, aspectPos, customRect, zoomRect, zoomAnimated, globalActions, hasAspectWork, hasZoomWork, keepFull });
     },
     collect() {
-      const { mode, selectedAspect, aspectPos, customRect, zoomRect, globalActions, hasAspectWork, hasZoomWork, keepFull } = this._getState();
+      const { mode, selectedAspect, aspectPos, customRect, zoomRect, zoomAnimated, globalActions, hasAspectWork, hasZoomWork, keepFull } = this._getState();
       if (mode === "segments") {
         if (!track.segments.length) throw new Error("Ajoutez au moins un morceau.");
         return {
@@ -1779,6 +1786,7 @@ const FORMS = {
             aspect_position: s.aspectPos,
             crop_rect: s.aspectRatio === "custom" ? s.cropRect : null,
             zoom_rect: s.zoomRect || null,
+            zoom_animated: s.zoomAnimated || false,
           })),
         };
       }
@@ -1792,7 +1800,10 @@ const FORMS = {
         params.aspect_ratio = selectedAspect;
         params.aspect_position = aspectPos;
       }
-      if (zoomRect) params.zoom_rect = zoomRect;
+      if (zoomRect) {
+        params.zoom_rect = zoomRect;
+        params.zoom_animated = zoomAnimated;
+      }
       return params;
     },
     cleanup() {
