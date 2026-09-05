@@ -349,7 +349,7 @@ trimBtn.addEventListener("click", async () => {
   setProgress(0, toExport.length > 1 ? "Démarrage du découpage et de la combinaison..." : "Démarrage du découpage...");
 
   const formData = new FormData();
-  formData.append("media", selectedFile);
+  appendMediaField(formData, selectedFile, "media");
   formData.append(
     "segments",
     JSON.stringify(toExport.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end) })))

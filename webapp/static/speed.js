@@ -354,7 +354,7 @@ applyBtn.addEventListener("click", async () => {
   setSpeedProgress(0, "Démarrage du traitement...");
 
   const formData = new FormData();
-  formData.append("media", selectedFile);
+  appendMediaField(formData, selectedFile, "media");
   formData.append("mode", mode);
 
   if (mode === "global") {
