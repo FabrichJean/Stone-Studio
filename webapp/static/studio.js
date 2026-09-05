@@ -1302,6 +1302,7 @@ const FORMS = {
       let draggingCrop = false;
       let customRect = null;
       let zoomRect = null;
+      let zoomAnimated = false;
       // Quel rectangle l'overlay dessine/édite actuellement : le format d'affichage
       // personnalisé et le zoom réutilisent la même interaction de dessin, mais gardent
       // chacun leur propre rectangle en mémoire (les deux peuvent être actifs à la fois).
@@ -1386,6 +1387,11 @@ const FORMS = {
             <span>Zone libre</span>
           </button>
         </div>
+        <div class="mode-toggle" id="orientZoomTransitionToggle" style="margin-top:8px;" hidden>
+          <button type="button" class="mode-toggle-btn active" data-zoom-animated="false">Statique</button>
+          <button type="button" class="mode-toggle-btn" data-zoom-animated="true">Progressif</button>
+        </div>
+        <p class="studio-form-note" id="orientZoomTransitionHint" hidden>Le zoom se resserre progressivement sur la zone choisie au début du morceau, puis reste fixe.</p>
 
         <div class="mode-toggle" id="orientModeToggle" style="margin-top:16px;">
           <button type="button" class="mode-toggle-btn active" data-mode="global">Orientation globale</button>
@@ -1624,20 +1630,29 @@ const FORMS = {
         });
       });
 
+      const zoomTransitionToggle = document.getElementById("orientZoomTransitionToggle");
+      const zoomTransitionHint = document.getElementById("orientZoomTransitionHint");
+
       container.querySelectorAll('[data-zoom]').forEach((btn) => {
         btn.addEventListener("click", () => {
           container.querySelectorAll('[data-zoom]').forEach((b) => b.classList.toggle("active", b === btn));
           if (btn.dataset.zoom === "custom") {
             cropTarget = "zoom";
             if (!zoomRect) zoomRect = { x: 0.2, y: 0.2, w: 0.6, h: 0.6 };
+            zoomTransitionToggle.hidden = false;
+            zoomTransitionHint.hidden = !zoomAnimated;
           } else {
             zoomRect = null;
             if (cropTarget === "zoom") cropTarget = selectedAspect === "custom" ? "aspect" : null;
+            zoomTransitionToggle.hidden = true;
+            zoomTransitionHint.hidden = true;
           }
           updateCropBox();
         });
       });
 
+      zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
       globalPanel.querySelectorAll("[data-action]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const idx = globalActions.indexOf(btn.dataset.action);
