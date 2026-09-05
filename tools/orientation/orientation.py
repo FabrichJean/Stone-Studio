@@ -171,33 +171,46 @@ def _animated_zoom_graph(
     input_label: str, rect: dict, target_w: int, target_h: int, total_duration: float,
 ) -> tuple[list[str], str]:
     """Construit un graphe de filtres (`filter_complex`) simulant une transition de zoom
-    progressive ("punch-in") : ffmpeg ne permet pas de faire varier les dimensions d'un crop
-    frame par frame, donc on approxime la transition par une succession de courts segments à
-    crop fixe (un par pas), rognés puis mis à l'échelle, ensuite concaténés. Après la
-    transition, la vidéo reste figée sur le cadre `rect` (zoom tenu) jusqu'à `total_duration`."""
-    transition = min(ZOOM_TRANSITION_SECONDS, max(total_duration, 0.05))
+    progressive ("punch-in" puis "punch-out") : ffmpeg ne permet pas de faire varier les
+    dimensions d'un crop frame par frame, donc on approxime chaque transition par une
+    succession de courts segments à crop fixe (un par pas), rognés puis mis à l'échelle, ensuite
+    concaténés. Le zoom entre progressivement au début, reste tenu (si la durée le permet), puis
+    ressort progressivement à la toute fin, plutôt que de couper net sur le cadre plein."""
+    # Si la durée totale est trop courte pour une entrée ET une sortie complètes, on répartit le
+    # temps disponible à parts égales entre les deux plutôt que de les tronquer arbitrairement.
+    transition = ZOOM_TRANSITION_SECONDS if total_duration >= 2 * ZOOM_TRANSITION_SECONDS else max(total_duration / 2, 0.05)
     steps = ZOOM_TRANSITION_STEPS
     dt = transition / steps
 
-    parts = []
-    for i in range(steps):
-        t0, t1 = i * dt, (i + 1) * dt
-        p = i / (steps - 1) if steps > 1 else 1.0
-        cw, ch, cx, cy = _zoom_crop_box(rect, target_w, target_h, p)
-        parts.append(
-            f"[b{i}]trim=start={t0:.6f}:end={t1:.6f},setpts=PTS-STARTPTS,"
-            f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h},setsar=1[z{i}]"
-        )
+    def add_ramp(parts: list[str], branch: int, t_offset: float, p_start: float, p_end: float) -> int:
+        for i in range(steps):
+            t0, t1 = t_offset + i * dt, t_offset + (i + 1) * dt
+            frac = i / (steps - 1) if steps > 1 else 1.0
+            p = p_start + (p_end - p_start) * frac
+            cw, ch, cx, cy = _zoom_crop_box(rect, target_w, target_h, p)
+            parts.append(
+                f"[b{branch}]trim=start={t0:.6f}:end={t1:.6f},setpts=PTS-STARTPTS,"
+                f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h},setsar=1[z{branch}]"
+            )
+            branch += 1
+        return branch
 
-    hold_needed = total_duration > transition + 0.05
-    n = steps + (1 if hold_needed else 0)
-    if hold_needed:
+    parts: list[str] = []
+    branch = add_ramp(parts, 0, 0.0, 0.0, 1.0)
+
+    hold_start, hold_end = transition, total_duration - transition
+    if hold_end > hold_start + 0.05:
         cw, ch, cx, cy = _zoom_crop_box(rect, target_w, target_h, 1.0)
         parts.append(
-            f"[b{steps}]trim=start={transition:.6f}:end={total_duration:.6f},setpts=PTS-STARTPTS,"
-            f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h},setsar=1[z{steps}]"
+            f"[b{branch}]trim=start={hold_start:.6f}:end={hold_end:.6f},setpts=PTS-STARTPTS,"
+            f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h},setsar=1[z{branch}]"
         )
+        branch += 1
 
+    outro_start = max(hold_end, transition)
+    branch = add_ramp(parts, branch, outro_start, 1.0, 0.0)
+
+    n = branch
     split_labels = "".join(f"[b{i}]" for i in range(n))
     concat_in = "".join(f"[z{i}]" for i in range(n))
     graph = [f"[{input_label}]split={n}{split_labels}", *parts, f"{concat_in}concat=n={n}:v=1:a=0[zoomout]"]
