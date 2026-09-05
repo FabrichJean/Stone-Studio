@@ -1392,7 +1392,7 @@ const FORMS = {
           <button type="button" class="mode-toggle-btn active" data-zoom-animated="false">Statique</button>
           <button type="button" class="mode-toggle-btn" data-zoom-animated="true">Progressif</button>
         </div>
-        <p class="studio-form-note" id="orientZoomTransitionHint" hidden>Le zoom se resserre progressivement sur la zone choisie au début du morceau, puis reste fixe.</p>
+        <p class="studio-form-note" id="orientZoomTransitionHint" hidden>Le zoom se resserre progressivement sur la zone choisie au début du morceau, reste fixe, puis ressort progressivement à la fin.</p>
 
         <div class="mode-toggle" id="orientModeToggle" style="margin-top:16px;">
           <button type="button" class="mode-toggle-btn active" data-mode="global">Orientation globale</button>
@@ -1440,6 +1440,19 @@ const FORMS = {
         if (handle.includes("s")) bottom = Math.max(cur.y, top + MIN_CUSTOM);
         left = clamp01(left); right = clamp01(right); top = clamp01(top); bottom = clamp01(bottom);
         return { x: left, y: top, w: right - left, h: bottom - top };
+      }
+
+      // Le zoom rogne puis réagrandit aux dimensions d'origine de la vidéo : un cadre dont le
+      // ratio ne correspond pas à celui de la vidéo étire l'image lors de ce réagrandissement.
+      // On contraint donc le dessin/redimensionnement du cadre de zoom à un carré en fractions
+      // (x/y/w/h sont chacun normalisés indépendamment par la largeur/hauteur réelle de la
+      // vidéo, donc un cadre carré en fractions donne toujours un crop au même ratio qu'elle).
+      function squareRectFromAnchor(anchorX, anchorY, cur, minSize) {
+        const dx = cur.x - anchorX, dy = cur.y - anchorY;
+        const maxSideX = dx >= 0 ? 1 - anchorX : anchorX;
+        const maxSideY = dy >= 0 ? 1 - anchorY : anchorY;
+        const side = Math.min(Math.max(Math.abs(dx), Math.abs(dy), minSize), Math.max(maxSideX, 0), Math.max(maxSideY, 0));
+        return { x: dx >= 0 ? anchorX : anchorX - side, y: dy >= 0 ? anchorY : anchorY - side, w: side, h: side };
       }
 
       function applyPreviewTransform(actions) {
