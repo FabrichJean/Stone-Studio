@@ -570,7 +570,7 @@ const FORMS = {
     });
 
     const formData = new FormData();
-    formData.append("file", file);
+    appendMediaField(formData, file, "file");
     fetch("/api/studio/upload", { method: "POST", body: formData })
       .then((r) => r.json())
       .then((record) => {
@@ -647,7 +647,7 @@ const FORMS = {
     });
 
     const formData = new FormData();
-    formData.append("file", file);
+    appendMediaField(formData, file, "file");
     fetch("/api/studio/upload", { method: "POST", body: formData })
       .then((r) => r.json())
       .then((record) => {
@@ -698,7 +698,7 @@ const FORMS = {
     renderTimeline();
 
     const formData = new FormData();
-    formData.append("file", file);
+    appendMediaField(formData, file, "file");
     fetch("/api/studio/upload", { method: "POST", body: formData })
       .then((r) => r.json())
       .then((record) => {
@@ -778,6 +778,7 @@ const FORMS = {
           const res = await fetch(`/api/projects/${record.id}/download`);
           const blob = await res.blob();
           const file = new File([blob], record.output_name, { type: blob.type });
+          file.sourceProjectId = record.id;
           closePanelPicker();
           replaceToolInput(file);
         } catch {
