@@ -172,17 +172,40 @@ def _resolve_project_path(project_id: str) -> tuple[Path, dict]:
     return path, record
 
 
-@app.post("/api/studio/upload")
-async def api_studio_upload(file: UploadFile = File(...)):
-    file_id = uuid.uuid4().hex
-    stored_name = f"{file_id}_{file.filename}"
+def _store_upload(upload: UploadFile, file_id: str) -> dict:
+    stored_name = f"{file_id}_{upload.filename}"
     path = UPLOADS_DIR / stored_name
-
     with path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    record = save_project("upload", None, "uploads", stored_name, file.filename)
+        shutil.copyfileobj(upload.file, f)
+    return save_project("upload", None, "uploads", stored_name, upload.filename)
 
-    return record
+
+def _resolve_input(upload: UploadFile | None, source_project_id: str | None, file_id: str) -> tuple[Path, str]:
+    """Retourne (chemin, nom de fichier d'origine) pour l'entrée d'un traitement. Si
+    `source_project_id` est fourni (fichier réutilisé depuis un projet existant via le
+    sélecteur de projet — "Envoyer vers", timeline Studio, etc.), on pointe directement sur
+    son fichier déjà stocké au lieu de le re-télécharger et de dupliquer son entrée dans la
+    liste des projets."""
+    if source_project_id:
+        path, record = _resolve_project_path(source_project_id)
+        return path, record["output_name"]
+    if upload is None:
+        raise HTTPException(400, "Fichier requis.")
+    record = _store_upload(upload, file_id)
+    return DIRS[record["output_dir"]] / record["output_file"], upload.filename
+
+
+@app.post("/api/studio/upload")
+async def api_studio_upload(
+    file: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
+):
+    if source_project_id:
+        _, record = _resolve_project_path(source_project_id)
+        return record
+    if file is None:
+        raise HTTPException(400, "Fichier requis.")
+    return _store_upload(file, uuid.uuid4().hex)
 
 
 def _run_studio_job(job_id: str, source_path: Path, chain: list[dict], base_name: str) -> None:
@@ -417,7 +440,8 @@ def _run_extract_job(
 
 @app.post("/api/extract-audio")
 async def api_extract_audio(
-    video: UploadFile = File(...),
+    video: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
     format: str = Form("mp3"),
     bitrate: str | None = Form(None),
     channels: str | None = Form(None),
@@ -427,19 +451,14 @@ async def api_extract_audio(
         raise HTTPException(400, f"Format non supporté : {format}")
 
     job_id = uuid.uuid4().hex
-    video_file = f"{job_id}_{video.filename}"
-    video_path = UPLOADS_DIR / video_file
+    video_path, filename = _resolve_input(video, source_project_id, job_id)
     output_file = f"{job_id}.{format}"
     output_path = OUTPUT_DIR / output_file
-
-    with video_path.open("wb") as f:
-        shutil.copyfileobj(video.file, f)
-    save_project("upload", None, "uploads", video_file, video.filename)
 
     EXTRACT_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
         target=_run_extract_job,
-        args=(job_id, video_path, output_path, video.filename, format, bitrate, channels, sample_rate),
+        args=(job_id, video_path, output_path, filename, format, bitrate, channels, sample_rate),
         daemon=True,
     )
     thread.start()
@@ -481,7 +500,8 @@ def _run_trim_job(
 
 @app.post("/api/trim-media")
 async def api_trim_media(
-    media: UploadFile = File(...),
+    media: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
     segments: str = Form(...),  # JSON: [{"start": "00:00:01", "end": "00:00:04"}, ...]
 ):
     try:
@@ -500,20 +520,15 @@ async def api_trim_media(
         pairs.append((start, end))
 
     job_id = uuid.uuid4().hex
-    suffix = Path(media.filename).suffix
-    media_file = f"{job_id}_{media.filename}"
-    media_path = UPLOADS_DIR / media_file
+    media_path, filename = _resolve_input(media, source_project_id, job_id)
+    suffix = Path(filename).suffix
     output_file = f"{job_id}{suffix}"
     output_path = OUTPUT_DIR / output_file
-
-    with media_path.open("wb") as f:
-        shutil.copyfileobj(media.file, f)
-    save_project("upload", None, "uploads", media_file, media.filename)
 
     TRIM_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
         target=_run_trim_job,
-        args=(job_id, media_path, output_path, media.filename, pairs),
+        args=(job_id, media_path, output_path, filename, pairs),
         daemon=True,
     )
     thread.start()
@@ -558,7 +573,8 @@ def _run_speed_job(
 
 @app.post("/api/speed-media")
 async def api_speed_media(
-    media: UploadFile = File(...),
+    media: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
     mode: str = Form(...),  # "global" | "segments"
     factor: float | None = Form(None),
     segments: str | None = Form(None),  # JSON: [{"start","end","factor"}, ...]
@@ -589,20 +605,15 @@ async def api_speed_media(
             pairs.append({"start": start, "end": end, "factor": float(seg_factor)})
 
     job_id = uuid.uuid4().hex
-    suffix = Path(media.filename).suffix
-    media_file = f"{job_id}_{media.filename}"
-    media_path = UPLOADS_DIR / media_file
+    media_path, filename = _resolve_input(media, source_project_id, job_id)
+    suffix = Path(filename).suffix
     output_file = f"{job_id}{suffix}"
     output_path = OUTPUT_DIR / output_file
-
-    with media_path.open("wb") as f:
-        shutil.copyfileobj(media.file, f)
-    save_project("upload", None, "uploads", media_file, media.filename)
 
     SPEED_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
         target=_run_speed_job,
-        args=(job_id, media_path, output_path, media.filename, mode, factor, pairs),
+        args=(job_id, media_path, output_path, filename, mode, factor, pairs),
         daemon=True,
     )
     thread.start()
@@ -668,7 +679,8 @@ def _run_orientation_job(
 
 @app.post("/api/orientation")
 async def api_orientation(
-    video: UploadFile = File(...),
+    video: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
     mode: str = Form(...),  # "global" | "segments"
     actions: str | None = Form(None),  # JSON: ["rotate_90_cw", "flip_horizontal"] (mode=global)
     segments: str | None = Form(None),  # JSON: [{"start","end","actions":[...],"aspect_ratio","aspect_position"}, ...]
@@ -758,21 +770,16 @@ async def api_orientation(
             })
 
     job_id = uuid.uuid4().hex
-    suffix = Path(video.filename).suffix
-    video_file = f"{job_id}_{video.filename}"
-    video_path = UPLOADS_DIR / video_file
+    video_path, filename = _resolve_input(video, source_project_id, job_id)
+    suffix = Path(filename).suffix
     output_file = f"{job_id}{suffix}"
     output_path = OUTPUT_DIR / output_file
-
-    with video_path.open("wb") as f:
-        shutil.copyfileobj(video.file, f)
-    save_project("upload", None, "uploads", video_file, video.filename)
 
     ORIENTATION_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
         target=_run_orientation_job,
         args=(
-            job_id, video_path, output_path, video.filename, mode,
+            job_id, video_path, output_path, filename, mode,
             action_list, aspect_ratio, aspect_position, parsed_crop_rect, parsed_zoom_rect, pairs,
             keep_full, zoom_animated,
         ),
@@ -859,7 +866,8 @@ def record_progress(job_id: str):
 
 @app.post("/api/noise-removal")
 async def api_noise_removal(
-    media: UploadFile = File(...),
+    media: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
     level: str = Form("medium"),
     reduce_hum: bool = Form(False),
 ):
@@ -867,24 +875,19 @@ async def api_noise_removal(
         raise HTTPException(400, f"Niveau non supporté : {level}")
 
     job_id = uuid.uuid4().hex
-    suffix = Path(media.filename).suffix
-    media_file = f"{job_id}_{media.filename}"
-    media_path = UPLOADS_DIR / media_file
+    media_path, filename = _resolve_input(media, source_project_id, job_id)
+    suffix = Path(filename).suffix
     output_file = f"{job_id}{suffix}"
     output_path = OUTPUT_DIR / output_file
-
-    with media_path.open("wb") as f:
-        shutil.copyfileobj(media.file, f)
-    save_project("upload", None, "uploads", media_file, media.filename)
 
     try:
         remove_noise(media_path, output_path, level, reduce_hum)
     except RuntimeError as e:
         raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
 
-    stem = Path(media.filename).stem
+    stem = Path(filename).stem
     output_name = f"{stem}_denoised{suffix}"
-    save_project("noise_removal", media.filename, "output", output_file, output_name)
+    save_project("noise_removal", filename, "output", output_file, output_name)
 
     return FileResponse(
         output_path, filename=output_name, media_type="application/octet-stream",
@@ -916,7 +919,8 @@ def _run_compress_job(job_id: str, video_path: Path, output_path: Path, filename
 
 @app.post("/api/compress-media")
 async def api_compress_media(
-    video: UploadFile = File(...),
+    video: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
     level: str = Form("medium"),
     resolution: str = Form("original"),
     max_size_mb: float | None = Form(None),
@@ -929,19 +933,14 @@ async def api_compress_media(
         raise HTTPException(400, "La taille maximale doit être positive.")
 
     job_id = uuid.uuid4().hex
-    video_file = f"{job_id}_{video.filename}"
-    video_path = UPLOADS_DIR / video_file
+    video_path, filename = _resolve_input(video, source_project_id, job_id)
     output_file = f"{job_id}.mp4"
     output_path = OUTPUT_DIR / output_file
-
-    with video_path.open("wb") as f:
-        shutil.copyfileobj(video.file, f)
-    save_project("upload", None, "uploads", video_file, video.filename)
 
     COMPRESS_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
         target=_run_compress_job,
-        args=(job_id, video_path, output_path, video.filename, level, resolution, max_size_mb),
+        args=(job_id, video_path, output_path, filename, level, resolution, max_size_mb),
         daemon=True,
     )
     thread.start()

@@ -60,6 +60,7 @@ function renderPickerList(filter, onSelect) {
         const blob = await res.blob();
         const file = new File([blob], record.output_name, { type: blob.type });
         file.knownDuration = record.duration || null;
+        file.sourceProjectId = record.id;
         closeProjectPicker();
         onSelect(file);
       } catch {
@@ -144,7 +145,22 @@ async function loadProjectAsFile(projectId) {
   // simple au double). On transporte la durée exacte mesurée côté serveur (ffprobe) avec le
   // fichier, pour que les pages outils puissent s'y fier plutôt qu'à l'estimation du navigateur.
   file.knownDuration = record.duration || null;
+  // Le fichier existe déjà côté serveur (projet source ou résultat d'un autre outil) : on
+  // retient son id pour éviter de le re-télécharger puis le re-uploader lors du traitement,
+  // ce qui dupliquerait inutilement son entrée dans la liste des projets.
+  file.sourceProjectId = record.id;
   return file;
+}
+
+// Ajoute le fichier média à envoyer pour un traitement : si `file` provient d'un projet déjà
+// connu du serveur (sélecteur de projet, "Envoyer vers"), on passe juste son id au lieu de
+// re-uploader ses octets, ce qui évite de dupliquer son entrée dans la liste des projets.
+function appendMediaField(formData, file, fieldName) {
+  if (file.sourceProjectId) {
+    formData.append("source_project_id", file.sourceProjectId);
+  } else {
+    formData.append(fieldName, file);
+  }
 }
 
 // À appeler au chargement de chaque page d'outil : si l'URL contient ?project=<id>
