@@ -67,7 +67,7 @@ applyBtn.addEventListener("click", async () => {
   status.textContent = "Réduction du bruit en cours...";
 
   const formData = new FormData();
-  formData.append("media", selectedFile);
+  appendMediaField(formData, selectedFile, "media");
   formData.append("level", document.getElementById("level").value);
   formData.append("reduce_hum", document.getElementById("reduceHum").checked);
 

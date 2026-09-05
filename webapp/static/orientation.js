@@ -802,7 +802,7 @@ applyBtn.addEventListener("click", async () => {
   setOrientationProgress(0, "Démarrage du traitement...");
 
   const formData = new FormData();
-  formData.append("video", selectedFile);
+  appendMediaField(formData, selectedFile, "video");
   formData.append("mode", mode);
 
   if (mode === "global") {
