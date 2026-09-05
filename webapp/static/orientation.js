@@ -15,6 +15,8 @@ const cropBox = document.getElementById("cropBox");
 const zoomSection = document.getElementById("zoomSection");
 const zoomGrid = document.getElementById("zoomGrid");
 const zoomHint = document.getElementById("zoomHint");
+const zoomTransitionToggle = document.getElementById("zoomTransitionToggle");
+const zoomTransitionHint = document.getElementById("zoomTransitionHint");
 const modeSection = document.getElementById("modeSection");
 const modeToggle = document.getElementById("modeToggle");
 const globalPanel = document.getElementById("globalPanel");
@@ -84,6 +86,7 @@ let cropAxis = null; // "x" | "y" | null (null = pas de recadrage nécessaire)
 let draggingCrop = false;
 let customRect = null; // { x, y, w, h } en fractions (0..1) de l'aperçu — format d'affichage personnalisé
 let zoomRect = null; // { x, y, w, h } — zone à zoomer, indépendante du format d'affichage
+let zoomAnimated = false; // transition de zoom progressive (punch-in) plutôt que statique
 // Quel rectangle l'overlay dessine/édite actuellement : le format d'affichage personnalisé
 // et le zoom réutilisent la même interaction de dessin, mais gardent chacun leur propre
 // rectangle en mémoire (les deux peuvent être actifs à la fois).
@@ -354,15 +357,25 @@ zoomGrid.querySelectorAll(".orientation-btn").forEach((btn) => {
     if (btn.dataset.zoom === "custom") {
       cropTarget = "zoom";
       if (!zoomRect) zoomRect = { x: 0.2, y: 0.2, w: 0.6, h: 0.6 };
+      zoomTransitionToggle.hidden = false;
+      zoomTransitionHint.hidden = !zoomAnimated;
     } else {
       zoomRect = null;
       if (cropTarget === "zoom") cropTarget = selectedAspect === "custom" ? "aspect" : null;
+      zoomTransitionToggle.hidden = true;
+      zoomTransitionHint.hidden = true;
     }
     updateCropBox();
     updateApplyState();
   });
 });
 
+zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    zoomAnimated = btn.dataset.zoomAnimated === "true";
+    zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    zoomTransitionHint.hidden = !zoomAnimated;
+  });
 let selectedFile = null;
 let pendingDownload = null;
 let mediaDuration = 0;
