@@ -376,6 +376,8 @@ zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
     zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
     zoomTransitionHint.hidden = !zoomAnimated;
   });
+});
+
 let selectedFile = null;
 let pendingDownload = null;
 let mediaDuration = 0;
@@ -462,12 +464,16 @@ function handleFile(file) {
   aspectPos = 0.5;
   customRect = null;
   zoomRect = null;
+  zoomAnimated = false;
   cropTarget = null;
   customDragMode = null;
   cropOverlay.hidden = true;
   aspectHint.hidden = true;
   customHint.hidden = true;
   zoomHint.hidden = true;
+  zoomTransitionToggle.hidden = true;
+  zoomTransitionHint.hidden = true;
+  zoomTransitionToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b.dataset.zoomAnimated === "false"));
   document.querySelectorAll(".orientation-btn").forEach((b) => b.classList.remove("active"));
   aspectGrid.querySelector('.orientation-btn[data-aspect=""]').classList.add("active");
   zoomGrid.querySelector('.orientation-btn[data-zoom="off"]').classList.add("active");
@@ -596,7 +602,7 @@ function renderSegments() {
     .map((seg, i) => {
       const tags = [...seg.actions.map((a) => ACTION_LABELS[a])];
       if (seg.aspectRatio) tags.push(ASPECT_LABELS[seg.aspectRatio]);
-      if (seg.zoomRect) tags.push("Zoom");
+      if (seg.zoomRect) tags.push(seg.zoomAnimated ? "Zoom progressif" : "Zoom");
       return `
       <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
         <span>
@@ -733,6 +739,7 @@ addSegmentBtn.addEventListener("click", () => {
     aspectPos: aspectPos,
     cropRect: selectedAspect === "custom" ? customRect : null,
     zoomRect: zoomRect || null,
+    zoomAnimated: zoomRect ? zoomAnimated : false,
   });
   segments.sort((a, b) => a.start - b.start);
   renderSegments();
@@ -806,7 +813,10 @@ applyBtn.addEventListener("click", async () => {
       formData.append("aspect_ratio", selectedAspect);
       formData.append("aspect_position", aspectPos);
     }
-    if (zoomRect) formData.append("zoom_rect", JSON.stringify(zoomRect));
+    if (zoomRect) {
+      formData.append("zoom_rect", JSON.stringify(zoomRect));
+      formData.append("zoom_animated", zoomAnimated ? "true" : "false");
+    }
   } else {
     formData.append(
       "segments",
@@ -819,6 +829,7 @@ applyBtn.addEventListener("click", async () => {
           aspect_position: s.aspectPos,
           crop_rect: s.aspectRatio === "custom" ? s.cropRect : null,
           zoom_rect: s.zoomRect || null,
+          zoom_animated: s.zoomAnimated || false,
         }))
       )
     );
