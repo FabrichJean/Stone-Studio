@@ -102,6 +102,21 @@ TOOL_LABELS = {
     "studio_chain": "Studio",
 }
 
+# Libellés affichés dans <title> selon la page active (clé = active_tool passé au template) —
+# distinct de TOOL_LABELS, qui sert à nommer le type d'un projet, pas une page.
+PAGE_TITLES = {
+    "extract_audio": "Extraction audio",
+    "studio": "Studio",
+    "trim_media": "Trim media",
+    "speed_media": "Speed",
+    "orientation": "Screen",
+    "screen_record": "Enregistrement écran",
+    "noise_removal": "Suppression bruit",
+    "compress_media": "Compression vidéo",
+    "projects": "Mes projets",
+}
+templates.env.globals["PAGE_TITLES"] = PAGE_TITLES
+
 
 def load_projects() -> list[dict]:
     if not PROJECTS_FILE.exists():
