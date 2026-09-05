@@ -147,6 +147,63 @@ def _zoom_filter(rect: dict, target_w: int, target_h: int) -> str:
     )
 
 
+ZOOM_TRANSITION_SECONDS = 0.8
+ZOOM_TRANSITION_STEPS = 14
+
+
+def _even(value: float, upper: int) -> int:
+    v = int(round(value))
+    v -= v % 2
+    return max(2, min(v, upper))
+
+
+def _zoom_crop_box(rect: dict, target_w: int, target_h: int, p: float) -> tuple[int, int, int, int]:
+    """Rectangle de crop (en pixels) interpolé entre le cadre complet (p=0) et `rect` (p=1)."""
+    x, y, w, h = rect["x"], rect["y"], rect["w"], rect["h"]
+    cw = _even(target_w * (1 - p * (1 - w)), target_w)
+    ch = _even(target_h * (1 - p * (1 - h)), target_h)
+    cx = min(int(round(target_w * x * p)), target_w - cw)
+    cy = min(int(round(target_h * y * p)), target_h - ch)
+    return cw, ch, cx, cy
+
+
+def _animated_zoom_graph(
+    input_label: str, rect: dict, target_w: int, target_h: int, total_duration: float,
+) -> tuple[list[str], str]:
+    """Construit un graphe de filtres (`filter_complex`) simulant une transition de zoom
+    progressive ("punch-in") : ffmpeg ne permet pas de faire varier les dimensions d'un crop
+    frame par frame, donc on approxime la transition par une succession de courts segments à
+    crop fixe (un par pas), rognés puis mis à l'échelle, ensuite concaténés. Après la
+    transition, la vidéo reste figée sur le cadre `rect` (zoom tenu) jusqu'à `total_duration`."""
+    transition = min(ZOOM_TRANSITION_SECONDS, max(total_duration, 0.05))
+    steps = ZOOM_TRANSITION_STEPS
+    dt = transition / steps
+
+    parts = []
+    for i in range(steps):
+        t0, t1 = i * dt, (i + 1) * dt
+        p = i / (steps - 1) if steps > 1 else 1.0
+        cw, ch, cx, cy = _zoom_crop_box(rect, target_w, target_h, p)
+        parts.append(
+            f"[b{i}]trim=start={t0:.6f}:end={t1:.6f},setpts=PTS-STARTPTS,"
+            f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h},setsar=1[z{i}]"
+        )
+
+    hold_needed = total_duration > transition + 0.05
+    n = steps + (1 if hold_needed else 0)
+    if hold_needed:
+        cw, ch, cx, cy = _zoom_crop_box(rect, target_w, target_h, 1.0)
+        parts.append(
+            f"[b{steps}]trim=start={transition:.6f}:end={total_duration:.6f},setpts=PTS-STARTPTS,"
+            f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h},setsar=1[z{steps}]"
+        )
+
+    split_labels = "".join(f"[b{i}]" for i in range(n))
+    concat_in = "".join(f"[z{i}]" for i in range(n))
+    graph = [f"[{input_label}]split={n}{split_labels}", *parts, f"{concat_in}concat=n={n}:v=1:a=0[zoomout]"]
+    return graph, "zoomout"
+
+
 def change_orientation(
     input_path: Path,
     output_path: Path,
@@ -157,6 +214,7 @@ def change_orientation(
     aspect_position: float = 0.5,
     crop_rect: dict | None = None,
     zoom_rect: dict | None = None,
+    zoom_animated: bool = False,
     on_progress: ProgressCallback | None = None,
     progress_range: tuple[float, float] = (0.0, 1.0),
 ) -> None:
@@ -166,12 +224,15 @@ def change_orientation(
     if not actions and not aspect_ratio and not crop_rect and not zoom_rect:
         raise ValueError("Au moins une action, un zoom ou un format d'affichage est requis.")
 
-    filter_parts = []
-    audio_filter = None
+    if start and end:
+        seg_duration = time_to_seconds(end) - time_to_seconds(start)
+    elif start or end:
+        seg_duration = None
+    else:
+        seg_duration = probe_duration(input_path) if (on_progress or (zoom_rect and zoom_animated)) else None
 
-    # Le trim est fait dans le graphe de filtres plutôt que via -ss/-to : combiner -ss/-to
-    # (seek "accurate" en option de sortie) avec un filtre vidéo personnalisé fait que ffmpeg
-    # ignore silencieusement ce filtre dans certaines versions.
+    audio_filter = None
+    trim_expr = None
     if start or end:
         bounds = []
         if start:
@@ -179,8 +240,54 @@ def change_orientation(
         if end:
             bounds.append(f"end={time_to_seconds(end)}")
         trim_expr = ":".join(bounds)
-        filter_parts += [f"trim={trim_expr}", "setpts=PTS-STARTPTS"]
         audio_filter = f"atrim={trim_expr},asetpts=PTS-STARTPTS"
+
+    tail_filters = [ACTIONS[a] for a in actions]
+    if crop_rect:
+        tail_filters.append(_custom_crop_filter(crop_rect))
+    elif aspect_ratio:
+        tail_filters.append(_crop_filter(aspect_ratio, aspect_position))
+
+    if zoom_rect and zoom_animated:
+        # Une transition de zoom animée ne peut pas s'exprimer comme un simple filtre -vf
+        # (ffmpeg ne fait pas varier les dimensions d'un crop frame par frame) : on construit
+        # un vrai graphe (-filter_complex) qui découpe le flux en plusieurs segments à crop
+        # fixe, rognés/mis à l'échelle puis recollés — voir `_animated_zoom_graph`.
+        target_w, target_h = probe_dimensions(input_path)
+        total_duration = seg_duration if seg_duration is not None else (probe_duration(input_path) or ZOOM_TRANSITION_SECONDS)
+
+        complex_parts = []
+        input_label = "0:v"
+        if trim_expr:
+            complex_parts.append(f"[0:v]trim={trim_expr},setpts=PTS-STARTPTS[vtrim]")
+            input_label = "vtrim"
+
+        zoom_stmts, zoom_out_label = _animated_zoom_graph(input_label, zoom_rect, target_w, target_h, total_duration)
+        complex_parts += zoom_stmts
+
+        if tail_filters:
+            complex_parts.append(f"[{zoom_out_label}]{','.join(tail_filters)}[outv]")
+            final_label = "outv"
+        else:
+            final_label = zoom_out_label
+
+        cmd = [
+            "ffmpeg", "-y", "-i", str(input_path),
+            "-filter_complex", ";".join(complex_parts),
+            "-map", f"[{final_label}]", "-map", "0:a?",
+        ]
+        if audio_filter:
+            cmd += ["-filter:a", audio_filter, "-c:a", "aac"]
+        else:
+            cmd += ["-c:a", "copy"]
+        cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18", str(output_path)]
+
+        _run_ffmpeg_progress(cmd, seg_duration, on_progress, *progress_range)
+        return
+
+    filter_parts = []
+    if trim_expr:
+        filter_parts += [f"trim={trim_expr}", "setpts=PTS-STARTPTS"]
 
     # Le zoom s'applique en premier (avant rotation/format d'affichage) car ses coordonnées
     # sont exprimées relativement à la frame d'origine, telle que dessinée par l'utilisateur
@@ -189,12 +296,7 @@ def change_orientation(
         target_w, target_h = probe_dimensions(input_path)
         filter_parts.append(_zoom_filter(zoom_rect, target_w, target_h))
 
-    filter_parts += [ACTIONS[a] for a in actions]
-
-    if crop_rect:
-        filter_parts.append(_custom_crop_filter(crop_rect))
-    elif aspect_ratio:
-        filter_parts.append(_crop_filter(aspect_ratio, aspect_position))
+    filter_parts += tail_filters
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vf", ",".join(filter_parts)]
 
@@ -204,13 +306,6 @@ def change_orientation(
         cmd += ["-c:a", "copy"]
 
     cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18", str(output_path)]
-
-    if start and end:
-        seg_duration = time_to_seconds(end) - time_to_seconds(start)
-    elif start or end:
-        seg_duration = None
-    else:
-        seg_duration = probe_duration(input_path) if on_progress else None
 
     _run_ffmpeg_progress(cmd, seg_duration, on_progress, *progress_range)
 
@@ -253,8 +348,8 @@ def orient_segments(
     on_progress: ProgressCallback | None = None, keep_full: bool = False,
 ) -> None:
     """segments: [{"start", "end", "actions": list[str], "aspect_ratio": str|None,
-    "aspect_position": float, "crop_rect": dict|None, "zoom_rect": dict|None}, ...] —
-    orientation, format d'affichage ET zoom propres à chaque morceau.
+    "aspect_position": float, "crop_rect": dict|None, "zoom_rect": dict|None,
+    "zoom_animated": bool}, ...] — orientation, format d'affichage ET zoom propres à chaque morceau.
 
     Par défaut (`keep_full=False`), la sortie ne contient que les morceaux sélectionnés,
     mis bout à bout (le reste de la vidéo est coupé). Avec `keep_full=True`, la sortie garde
@@ -312,7 +407,7 @@ def orient_segments(
                     part.get("actions") or [],
                     part.get("start"), part.get("end"),
                     part.get("aspect_ratio"), part.get("aspect_position", 0.5),
-                    part.get("crop_rect"), part.get("zoom_rect"),
+                    part.get("crop_rect"), part.get("zoom_rect"), part.get("zoom_animated", False),
                     on_progress=on_progress, progress_range=(cursor, cursor + span),
                 )
             cursor += span
