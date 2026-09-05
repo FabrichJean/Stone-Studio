@@ -1455,6 +1455,12 @@ const FORMS = {
         return { x: dx >= 0 ? anchorX : anchorX - side, y: dy >= 0 ? anchorY : anchorY - side, w: side, h: side };
       }
 
+      function resizeZoomRect(start, handle, cur) {
+        const anchorX = handle.includes("w") ? start.x + start.w : start.x;
+        const anchorY = handle.includes("n") ? start.y + start.h : start.y;
+        return squareRectFromAnchor(anchorX, anchorY, cur, MIN_CUSTOM);
+      }
+
       function applyPreviewTransform(actions) {
         if (!actions || actions.length === 0) { panelVideo.style.transform = ""; return; }
         let transform = actions.map((a) => TRANSFORMS[a]).join(" ");
@@ -1562,7 +1568,11 @@ const FORMS = {
         if (customDragMode) {
           const cur = pointToFraction(e.clientX, e.clientY);
           if (customDragMode === "draw") {
-            setActiveRect({ x: Math.min(customDragStart.x, cur.x), y: Math.min(customDragStart.y, cur.y), w: Math.abs(cur.x - customDragStart.x), h: Math.abs(cur.y - customDragStart.y) });
+            setActiveRect(
+              cropTarget === "zoom"
+                ? squareRectFromAnchor(customDragStart.x, customDragStart.y, cur, 0)
+                : { x: Math.min(customDragStart.x, cur.x), y: Math.min(customDragStart.y, cur.y), w: Math.abs(cur.x - customDragStart.x), h: Math.abs(cur.y - customDragStart.y) }
+            );
           } else if (customDragMode === "move") {
             const dx = cur.x - customDragStart.x, dy = cur.y - customDragStart.y;
             setActiveRect({
@@ -1571,7 +1581,9 @@ const FORMS = {
               w: customRectStart.w, h: customRectStart.h,
             });
           } else if (customDragMode === "resize") {
-            setActiveRect(resizeCustomRect(customRectStart, customHandle, cur));
+            setActiveRect(
+              cropTarget === "zoom" ? resizeZoomRect(customRectStart, customHandle, cur) : resizeCustomRect(customRectStart, customHandle, cur)
+            );
           }
           updateCropBox();
         }
