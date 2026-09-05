@@ -82,6 +82,7 @@ def _run_orientation(inp: Path, out: Path, params: dict, on_progress: ProgressCa
         aspect_position=float(params.get("aspect_position", 0.5)),
         crop_rect=crop_rect,
         zoom_rect=zoom_rect,
+        zoom_animated=bool(params.get("zoom_animated", False)),
         on_progress=on_progress,
     )
 

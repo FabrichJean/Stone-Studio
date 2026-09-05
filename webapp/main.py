@@ -634,7 +634,7 @@ def _run_orientation_job(
     job_id: str, video_path: Path, output_path: Path, filename: str, mode: str,
     action_list: list[str] | None, aspect_ratio: str | None, aspect_position: float,
     parsed_crop_rect: dict | None, parsed_zoom_rect: dict | None, pairs: list[dict] | None,
-    keep_full: bool = False,
+    keep_full: bool = False, zoom_animated: bool = False,
 ) -> None:
     def on_progress(frac: float) -> None:
         ORIENTATION_JOBS[job_id]["percent"] = round(frac * 100, 1)
@@ -644,7 +644,7 @@ def _run_orientation_job(
             change_orientation(
                 video_path, output_path, action_list or [],
                 aspect_ratio=aspect_ratio, aspect_position=aspect_position,
-                crop_rect=parsed_crop_rect, zoom_rect=parsed_zoom_rect,
+                crop_rect=parsed_crop_rect, zoom_rect=parsed_zoom_rect, zoom_animated=zoom_animated,
                 on_progress=on_progress,
             )
         else:
@@ -676,6 +676,7 @@ async def api_orientation(
     aspect_position: float = Form(0.5),  # 0..1 — position du recadrage le long de l'axe rogné
     crop_rect: str | None = Form(None),  # JSON {"x","y","w","h"} fractions 0..1 (mode=global, format personnalisé)
     zoom_rect: str | None = Form(None),  # JSON {"x","y","w","h"} fractions 0..1 (mode=global, zoom)
+    zoom_animated: bool = Form(False),  # mode=global : transition de zoom progressive (punch-in) plutôt que statique
     keep_full: bool = Form(False),  # mode=segments : garder toute la vidéo (portions non sélectionnées inchangées)
 ):
     if mode not in ("global", "segments"):
