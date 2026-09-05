@@ -148,6 +148,28 @@ function resizeCustomRect(start, handle, cur) {
   return { x: left, y: top, w: right - left, h: bottom - top };
 }
 
+// Le zoom rogne puis réagrandit aux dimensions d'origine de la vidéo : si le cadre dessiné
+// n'a pas le même ratio que la vidéo, ce réagrandissement étire l'image (déformation visible).
+// On contraint donc le dessin/redimensionnement du cadre de zoom à un carré en fractions —
+// comme x/y/w/h sont exprimés relativement aux dimensions réelles de la vidéo, un cadre carré
+// en fractions donne toujours un crop dans le même ratio que la vidéo, quel que soit ce ratio.
+function squareRectFromAnchor(anchorX, anchorY, cur, minSize) {
+  const dx = cur.x - anchorX;
+  const dy = cur.y - anchorY;
+  const maxSideX = dx >= 0 ? 1 - anchorX : anchorX;
+  const maxSideY = dy >= 0 ? 1 - anchorY : anchorY;
+  const side = Math.min(Math.max(Math.abs(dx), Math.abs(dy), minSize), Math.max(maxSideX, 0), Math.max(maxSideY, 0));
+  const x = dx >= 0 ? anchorX : anchorX - side;
+  const y = dy >= 0 ? anchorY : anchorY - side;
+  return { x, y, w: side, h: side };
+}
+
+function resizeZoomRect(start, handle, cur) {
+  const anchorX = handle.includes("w") ? start.x + start.w : start.x;
+  const anchorY = handle.includes("n") ? start.y + start.h : start.y;
+  return squareRectFromAnchor(anchorX, anchorY, cur, MIN_CUSTOM);
+}
+
 function updateCropBox() {
   if (cropTarget === "zoom") {
     cropOverlay.hidden = false;
@@ -274,12 +296,16 @@ window.addEventListener("pointermove", (e) => {
   const cur = pointToFraction(e.clientX, e.clientY);
 
   if (customDragMode === "draw") {
-    setActiveRect({
-      x: Math.min(customDragStart.x, cur.x),
-      y: Math.min(customDragStart.y, cur.y),
-      w: Math.abs(cur.x - customDragStart.x),
-      h: Math.abs(cur.y - customDragStart.y),
-    });
+    setActiveRect(
+      cropTarget === "zoom"
+        ? squareRectFromAnchor(customDragStart.x, customDragStart.y, cur, 0)
+        : {
+            x: Math.min(customDragStart.x, cur.x),
+            y: Math.min(customDragStart.y, cur.y),
+            w: Math.abs(cur.x - customDragStart.x),
+            h: Math.abs(cur.y - customDragStart.y),
+          }
+    );
   } else if (customDragMode === "move") {
     const dx = cur.x - customDragStart.x;
     const dy = cur.y - customDragStart.y;
@@ -290,7 +316,9 @@ window.addEventListener("pointermove", (e) => {
       h: customRectStart.h,
     });
   } else if (customDragMode === "resize") {
-    setActiveRect(resizeCustomRect(customRectStart, customHandle, cur));
+    setActiveRect(
+      cropTarget === "zoom" ? resizeZoomRect(customRectStart, customHandle, cur) : resizeCustomRect(customRectStart, customHandle, cur)
+    );
   }
 
   updateCropBox();
