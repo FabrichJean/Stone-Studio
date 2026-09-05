@@ -120,7 +120,7 @@ applyBtn.addEventListener("click", async () => {
   setProgress(0, "Démarrage de la compression...");
 
   const formData = new FormData();
-  formData.append("video", selectedFile);
+  appendMediaField(formData, selectedFile, "video");
   formData.append("level", document.getElementById("level").value);
   formData.append("resolution", document.getElementById("resolution").value);
   if (limitSize.checked && maxSizeMb.value) {

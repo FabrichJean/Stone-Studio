@@ -119,7 +119,7 @@ extractBtn.addEventListener("click", async () => {
   setProgress(0, "Démarrage de l'extraction...");
 
   const formData = new FormData();
-  formData.append("video", selectedFile);
+  appendMediaField(formData, selectedFile, "video");
   formData.append("format", document.getElementById("format").value);
   formData.append("bitrate", document.getElementById("bitrate").value);
   formData.append("channels", document.getElementById("channels").value);
