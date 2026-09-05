@@ -733,6 +733,7 @@ async def api_orientation(
             seg_pos = seg.get("aspect_position", 0.5)
             seg_crop_rect = seg.get("crop_rect")
             seg_zoom_rect = seg.get("zoom_rect")
+            seg_zoom_animated = bool(seg.get("zoom_animated", False))
 
             if not is_valid_time(start or "") or not is_valid_time(end or ""):
                 raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
@@ -753,7 +754,7 @@ async def api_orientation(
             pairs.append({
                 "start": start, "end": end, "actions": seg_actions,
                 "aspect_ratio": seg_aspect, "aspect_position": seg_pos,
-                "crop_rect": seg_crop_rect, "zoom_rect": seg_zoom_rect,
+                "crop_rect": seg_crop_rect, "zoom_rect": seg_zoom_rect, "zoom_animated": seg_zoom_animated,
             })
 
     job_id = uuid.uuid4().hex
@@ -773,7 +774,7 @@ async def api_orientation(
         args=(
             job_id, video_path, output_path, video.filename, mode,
             action_list, aspect_ratio, aspect_position, parsed_crop_rect, parsed_zoom_rect, pairs,
-            keep_full,
+            keep_full, zoom_animated,
         ),
         daemon=True,
     )
