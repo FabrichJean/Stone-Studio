@@ -306,3 +306,75 @@ def concat_clips(clip_paths: list[Path], workdir: Path, on_progress: ProgressCal
     if on_progress:
         on_progress(1.0)
     return out_path
+
+
+def concat_clips_with_overlays(
+    clip_paths: list[Path],
+    audio_overlays: list[dict],
+    workdir: Path,
+    on_progress: ProgressCallback | None = None,
+) -> Path:
+    """Assemble la piste principale (bout à bout, comme `concat_clips`) puis mixe par-dessus
+    les clips de la piste audio parallèle, chacun décalé à son propre point de départ — ils
+    peuvent librement se superposer entre eux et avec la piste principale.
+
+    `audio_overlays` : [{"path": Path, "start": float}, ...]. Sans piste principale, les
+    overlays sont simplement mixés entre eux (utile pour une timeline 100% audio)."""
+    if not audio_overlays:
+        return concat_clips(clip_paths, workdir, on_progress)
+
+    if clip_paths:
+        def main_progress(frac: float) -> None:
+            if on_progress:
+                on_progress(frac * 0.6)
+
+        main_path = concat_clips(clip_paths, workdir, main_progress)
+        total_duration = _probe_duration(main_path)
+        has_video = main_path.suffix.lower() in VIDEO_EXTS
+    else:
+        main_path = None
+        total_duration = max(o["start"] + _probe_duration(o["path"]) for o in audio_overlays)
+        has_video = False
+
+    cmd = ["ffmpeg", "-y"]
+    inputs = ([main_path] if main_path is not None else []) + [o["path"] for o in audio_overlays]
+    for p in inputs:
+        cmd += ["-i", str(p)]
+
+    filter_parts = []
+    mix_labels = []
+    base_idx = 0
+    if main_path is not None:
+        filter_parts.append("[0:a]aformat=sample_rates=44100:channel_layouts=stereo[amain]")
+        mix_labels.append("[amain]")
+        base_idx = 1
+
+    for j, overlay in enumerate(audio_overlays):
+        idx = base_idx + j
+        delay_ms = max(0, round(overlay["start"] * 1000))
+        label = f"[ov{j}]"
+        filter_parts.append(
+            f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,adelay={delay_ms}|{delay_ms}{label}"
+        )
+        mix_labels.append(label)
+
+    filter_parts.append(f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=longest:dropout_transition=0[aout]")
+
+    if main_path is not None and has_video:
+        maps = ["-map", "0:v", "-map", "[aout]"]
+        codec_args = ["-c:v", "copy", "-c:a", "aac"]
+        out_path = workdir / "timeline_export_mixed.mp4"
+    else:
+        maps = ["-map", "[aout]"]
+        codec_args = ["-c:a", "aac"]
+        out_path = workdir / "timeline_export_mixed.m4a"
+
+    cmd += ["-filter_complex", ";".join(filter_parts), *maps, *codec_args, "-t", str(total_duration), str(out_path)]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ChainError(f"Le mixage de la piste audio a échoué : {result.stderr.strip()[-400:]}")
+
+    if on_progress:
+        on_progress(1.0)
+    return out_path
