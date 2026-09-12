@@ -2,7 +2,7 @@
 {% block content %}
     <header class="page-header">
       <h1><span class="icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg></span> Enregistrement écran</h1>
-      <p>Capturez votre écran, une fenêtre ou un onglet, avec le son système et le micro.</p>
+      <p>Capturez votre écran, une fenêtre ou un onglet — ou enregistrez uniquement le son du micro.</p>
     </header>
 
     <section class="panel trim-panel">
@@ -11,10 +11,15 @@
       </div>
 
       <div id="setupPanel">
+        <div class="mode-toggle" id="recordModeToggle">
+          <button type="button" class="mode-toggle-btn active" data-mode="screen">Écran</button>
+          <button type="button" class="mode-toggle-btn" data-mode="audio">Audio seul</button>
+        </div>
+
         <div class="params" style="margin-top: 0">
           <h3>Paramètres de capture</h3>
           <div class="params-grid">
-            <label>
+            <label class="screen-only-field">
               Source
               <select id="surface">
                 <option value="monitor">Écran entier</option>
@@ -22,7 +27,7 @@
                 <option value="browser">Un onglet du navigateur</option>
               </select>
             </label>
-            <label>
+            <label class="screen-only-field">
               Qualité
               <select id="quality">
                 <option value="native" selected>Résolution native</option>
@@ -30,7 +35,7 @@
                 <option value="720">720p</option>
               </select>
             </label>
-            <label>
+            <label class="screen-only-field">
               Images par seconde
               <select id="fps">
                 <option value="30" selected>30 fps</option>
@@ -48,7 +53,7 @@
           </div>
 
           <div class="record-audio">
-            <label class="record-check">
+            <label class="record-check screen-only-field">
               <input type="checkbox" id="systemAudio" checked />
               <span>Son système <em>(onglet ou écran, selon le navigateur)</em></span>
             </label>
@@ -79,6 +84,14 @@
         </div>
       </div>
 
+      <div id="audioStage" class="video-stage record-stage record-audio-stage" hidden>
+        <div class="record-audio-visual">
+          <span class="icon"><svg width="32" height="32" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="7" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0"/><path d="M8 12v2.5M5.5 14.5h5"/></svg></span>
+          <span id="audioRecLabel">Enregistrement audio en cours…</span>
+        </div>
+        <div id="audioRecBadge" class="rec-badge" hidden><span class="rec-dot"></span><span id="audioRecState">REC</span></div>
+      </div>
+
       <div id="timerRow" class="record-timer-row" hidden>
         <span id="timer" class="record-timer">00:00</span>
         <span id="sizeLabel" class="record-size">0.0 MB</span>
@@ -86,11 +99,12 @@
 
       <div id="resultStage" class="video-stage" hidden>
         <video id="resultPreview" controls></video>
+        <audio id="resultAudioPreview" controls hidden></audio>
       </div>
 
       <div class="btn-row record-controls">
         <button id="startBtn" class="btn-primary record-btn">
-          <span class="icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg></span> Choisir l'écran
+          <span class="icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg></span> <span id="startBtnLabel">Choisir l'écran</span>
         </button>
         <button id="resetCropBtn" class="btn-secondary" hidden>
           <span class="icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></span> Zone complète
