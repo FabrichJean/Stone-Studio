@@ -13,6 +13,7 @@ const ICONS = {
   record: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>`,
   orientation: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="8.5" rx="1.3"/><path d="M6 13.5h4M8 11v2.5"/></svg>`,
   compress: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg>`,
+  sliders: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v3M3 9v4M8 3v6M8 12v1M13 3v1M13 7v6"/><circle cx="3" cy="7.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="8" cy="10.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="13" cy="5.5" r="1.4" fill="currentColor" stroke="none"/></svg>`,
 };
 
 function iconHtml(name, extraClass = "") {
@@ -26,6 +27,7 @@ const TOOL_ICONS = {
   orientation: ICONS.orientation,
   screen_record: ICONS.record,
   noise_removal: ICONS.noise,
+  remake_sound: ICONS.sliders,
   compress_media: ICONS.compress,
   upload: ICONS.upload,
 };
@@ -37,4 +39,5 @@ const TOOL_DESTINATIONS = [
   { key: "orientation", path: "/orientation", label: "Screen", icon: "orientation" },
   { key: "compress_media", path: "/compress", label: "Compression vidéo", icon: "compress" },
   { key: "noise_removal", path: "/noise-removal", label: "Suppression bruit", icon: "noise" },
+  { key: "remake_sound", path: "/remake-sound", label: "Remake sound", icon: "sliders" },
 ];

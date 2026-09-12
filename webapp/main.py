@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "tools" / "speed_media"))
 sys.path.insert(0, str(ROOT / "tools" / "orientation"))
 sys.path.insert(0, str(ROOT / "tools" / "screen_record"))
 sys.path.insert(0, str(ROOT / "tools" / "noise_removal"))
+sys.path.insert(0, str(ROOT / "tools" / "remake_sound"))
 sys.path.insert(0, str(ROOT / "tools" / "compress_media"))
 from compress_media import LEVELS as COMPRESS_LEVELS, RESOLUTIONS, compress_video  # noqa: E402
 from extract_audio import FORMATS, extract_audio  # noqa: E402
@@ -41,6 +42,7 @@ from screen_record import (  # noqa: E402
     finalize_recording,
 )
 from noise_removal import LEVELS as NOISE_LEVELS, remove_noise  # noqa: E402
+from remake_sound import PRESETS as REMAKE_PRESETS, remake_sound  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
 from studio_chain import concat_clips, run_chain  # noqa: E402
@@ -100,6 +102,7 @@ TOOL_LABELS = {
     "orientation": "Screen",
     "screen_record": "Enregistrement écran",
     "noise_removal": "Suppression bruit",
+    "remake_sound": "Remake sound",
     "compress_media": "Compression vidéo",
     "studio_chain": "Studio",
 }
@@ -114,6 +117,7 @@ PAGE_TITLES = {
     "orientation": "Screen",
     "screen_record": "Enregistrement écran",
     "noise_removal": "Suppression bruit",
+    "remake_sound": "Remake sound",
     "compress_media": "Compression vidéo",
     "projects": "Mes projets",
 }
@@ -353,6 +357,13 @@ def orientation_page(request: Request):
 @app.get("/noise-removal")
 def noise_removal_page(request: Request):
     return templates.TemplateResponse(request, "noise_removal.html", {"active_tool": "noise_removal"})
+
+
+@app.get("/remake-sound")
+def remake_sound_page(request: Request):
+    return templates.TemplateResponse(
+        request, "remake_sound.html", {"active_tool": "remake_sound", "presets": REMAKE_PRESETS}
+    )
 
 
 @app.get("/compress")
@@ -911,6 +922,36 @@ async def api_noise_removal(
     stem = Path(filename).stem
     output_name = f"{stem}_denoised{suffix}"
     save_project("noise_removal", filename, "output", output_file, output_name)
+
+    return FileResponse(
+        output_path, filename=output_name, media_type="application/octet-stream",
+        headers={"X-Project-Id": Path(output_file).stem},
+    )
+
+
+@app.post("/api/remake-sound")
+async def api_remake_sound(
+    media: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
+    preset: str = Form("cinematic"),
+):
+    if preset not in REMAKE_PRESETS:
+        raise HTTPException(400, f"Preset non supporté : {preset}")
+
+    job_id = uuid.uuid4().hex
+    media_path, filename = _resolve_input(media, source_project_id, job_id)
+    suffix = Path(filename).suffix
+    output_file = f"{job_id}{suffix}"
+    output_path = OUTPUT_DIR / output_file
+
+    try:
+        remake_sound(media_path, output_path, preset)
+    except RuntimeError as e:
+        raise HTTPException(500, f"Erreur ffmpeg : {e}") from e
+
+    stem = Path(filename).stem
+    output_name = f"{stem}_remake{suffix}"
+    save_project("remake_sound", filename, "output", output_file, output_name)
 
     return FileResponse(
         output_path, filename=output_name, media_type="application/octet-stream",
