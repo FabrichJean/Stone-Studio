@@ -14,6 +14,8 @@ const STUDIO_ACTIONS = [
   { type: "compress", label: "Compression", icon: "compress" },
   { type: "extract_audio", label: "Audio", icon: "headphones" },
   { type: "noise_removal", label: "Suppression bruit", icon: "noise" },
+  { type: "remake_sound", label: "Remake sound", icon: "sliders" },
+  { type: "volume", label: "Volume", icon: "volume" },
 ];
 
 const ACTION_LABELS = {
@@ -53,6 +55,13 @@ const LEVEL_LABELS = { light: "Léger", medium: "Moyen", strong: "Fort" };
 const NOISE_LEVEL_LABELS = { light: "Légère", medium: "Moyenne", strong: "Forte" };
 const RESOLUTION_LABELS = { original: "Originale", "1080p": "1080p", "720p": "720p", "480p": "480p" };
 const SPEED_FACTORS = ["0.25", "0.5", "0.75", "1", "1.25", "1.5", "2", "3", "4"];
+const REMAKE_PRESET_LABELS = {
+  cinematic: "Son cinématique",
+  autotune: "Autotune (effet vocal stylisé)",
+  clean_bass: "Basse très propre",
+  warm_voice: "Voix chaude (podcast/radio)",
+  bright_clarity: "Clarté / brillance",
+};
 
 const MIN_GAP = 0.2;
 const MIN_CUSTOM = 0.05;
@@ -149,6 +158,17 @@ const FORMS = {
       level: document.getElementById("f_level").value,
       reduce_hum: document.getElementById("f_reduce_hum").checked,
     }),
+  },
+  remake_sound: {
+    html: (p) => `
+      <div class="params-grid">
+        <label>Preset
+          <select id="f_preset">
+            ${Object.entries(REMAKE_PRESET_LABELS).map(([k, l]) => `<option value="${k}" ${(p.preset || "cinematic") === k ? "selected" : ""}>${l}</option>`).join("")}
+          </select>
+        </label>
+      </div>`,
+    collect: () => ({ preset: document.getElementById("f_preset").value }),
   },
 };
 
@@ -580,6 +600,7 @@ const FORMS = {
         timeline[0].hasFilmstrip = record.has_filmstrip;
         timeline[0].mediaType = record.media_type;
         renderTimeline();
+        pollFilmstrip(timeline[0]);
       })
       .catch(() => { statusEl.textContent = "Erreur lors de l'import du fichier."; statusEl.className = "status error"; });
   }
@@ -709,6 +730,7 @@ const FORMS = {
           size: record.output_size, duration: record.duration, hasFilmstrip: record.has_filmstrip,
         };
         renderTimeline();
+        pollFilmstrip(timeline[idx]);
       })
       .catch(() => {
         const idx = timeline.findIndex((c) => c.tempId === tempId);
@@ -801,6 +823,28 @@ const FORMS = {
 
   function clipWidth(clip) {
     return Math.max(MIN_CLIP_PX, Math.round((clip.duration || 3) * PX_PER_SEC));
+  }
+
+  // La miniature/bande de vignettes se génère désormais en arrière-plan côté serveur (voir
+  // save_project dans main.py) : le clip apparaît d'abord sans image, puis on la récupère dès
+  // qu'elle est prête au lieu d'attendre qu'elle bloque la réponse — surtout utile pour les
+  // médias longs, où la génération peut prendre plusieurs secondes.
+  function pollFilmstrip(clip, attemptsLeft = 40) {
+    if (!clip || !clip.id || clip.mediaType === "audio" || clip.hasFilmstrip || attemptsLeft <= 0) return;
+    setTimeout(() => {
+      fetch(`/api/projects/${clip.id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((record) => {
+          if (!record) return;
+          if (record.has_filmstrip) {
+            clip.hasFilmstrip = true;
+            renderTimeline();
+            return;
+          }
+          pollFilmstrip(clip, attemptsLeft - 1);
+        })
+        .catch(() => {});
+    }, 1500);
   }
 
   function renderTimeline() {
@@ -1289,6 +1333,162 @@ const FORMS = {
         return { mode: "segments", segments: track.segments.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end), factor: s.factor })) };
       }
       return { mode: "global", factor: document.getElementById("speedGlobalFactor").value };
+    },
+  };
+
+  /* ===================== Panneau Volume ===================== */
+
+  // <video>/<audio>.volume est plafonné à 1 (100%) par le navigateur : pour que l'aperçu
+  // reflète fidèlement une amplification au-delà de l'original, on route l'élément via un
+  // GainNode (Web Audio API), dont le gain n'a pas cette limite. createMediaElementSource ne
+  // peut être appelé qu'une fois par élément pour toute sa durée de vie, d'où la Map (un seul
+  // graphe par élément, réutilisé ensuite).
+  const mediaGainNodes = new WeakMap();
+
+  function setMediaGain(media, factor) {
+    let entry = mediaGainNodes.get(media);
+    if (!entry) {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = ctx.createMediaElementSource(media);
+      const gain = ctx.createGain();
+      source.connect(gain).connect(ctx.destination);
+      entry = { ctx, gain };
+      mediaGainNodes.set(media, entry);
+    }
+    if (entry.ctx.state === "suspended") entry.ctx.resume();
+    entry.gain.gain.value = factor;
+  }
+
+  // Ne remet le gain à 1 que si un graphe existe déjà pour cet élément : évite de créer un
+  // AudioContext (et de router l'élément dedans en permanence) pour les sessions qui n'ouvrent
+  // jamais le panneau Volume.
+  function resetMediaGainIfActive(media) {
+    const entry = mediaGainNodes.get(media);
+    if (entry) entry.gain.gain.value = 1;
+  }
+
+  function volumeFactorRangeHtml(id, valueId, value) {
+    return `<span id="${valueId}">${value} %</span>
+      <input type="range" id="${id}" min="0" max="300" step="5" value="${value}" />`;
+  }
+
+  const VolumePanel = {
+    render(container) {
+      let mode = "global";
+      container.innerHTML = `
+        <div class="mode-toggle">
+          <button type="button" class="mode-toggle-btn active" data-mode="global">Volume global</button>
+          <button type="button" class="mode-toggle-btn" data-mode="segments">Par morceau</button>
+        </div>
+        <div class="speed-panel" id="volumeGlobalPanel">
+          <label class="speed-label">Volume du fichier entier — ${volumeFactorRangeHtml("volumeGlobalFactor", "volumeGlobalValue", 100)}</label>
+        </div>
+        <div class="speed-panel" id="volumeSegmentsPanel" hidden>
+          ${trimTrackHtml()}
+          <label class="speed-label">Volume de ce morceau — ${volumeFactorRangeHtml("volumeSegmentFactor", "volumeSegmentValue", 100)}</label>
+          <div class="btn-row">
+            <button type="button" class="btn-secondary" id="volumePreviewBtn">Prévisualiser</button>
+            <button type="button" class="btn-secondary" id="volumeAddSegmentBtn">Ajouter ce morceau</button>
+          </div>
+          <div class="segments-list" id="volumeSegmentsList"></div>
+        </div>`;
+
+      const segmentsPanel = document.getElementById("volumeSegmentsPanel");
+      const globalPanel = document.getElementById("volumeGlobalPanel");
+      const globalFactor = document.getElementById("volumeGlobalFactor");
+      const globalValue = document.getElementById("volumeGlobalValue");
+      const segmentFactor = document.getElementById("volumeSegmentFactor");
+      const segmentValue = document.getElementById("volumeSegmentValue");
+      let trackEls = null;
+
+      container.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          mode = btn.dataset.mode;
+          container.querySelectorAll(".mode-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+          globalPanel.hidden = mode !== "global";
+          segmentsPanel.hidden = mode !== "segments";
+          setMediaGain(activeMediaEl(), mode === "global" ? parseFloat(globalFactor.value) / 100 : 1);
+          if (mode === "segments" && !trackEls) {
+            trackEls = initTrack(segmentsPanel);
+            renderVolumeSegments();
+          }
+        });
+      });
+
+      globalFactor.addEventListener("input", () => {
+        globalValue.textContent = `${globalFactor.value} %`;
+        if (mode === "global") setMediaGain(activeMediaEl(), parseFloat(globalFactor.value) / 100);
+      });
+      segmentFactor.addEventListener("input", () => {
+        segmentValue.textContent = `${segmentFactor.value} %`;
+      });
+      setMediaGain(activeMediaEl(), parseFloat(globalFactor.value) / 100);
+
+      function renderVolumeSegments() {
+        const list = document.getElementById("volumeSegmentsList");
+        if (!list) return;
+        if (track.segments.length === 0) {
+          list.innerHTML = `<div class="segments-empty">Aucun morceau ajouté.</div>`;
+          return;
+        }
+        list.innerHTML = track.segments.map((seg, i) => `
+          <div class="segment-item" data-index="${i}" title="Cliquer pour prévisualiser ce morceau">
+            <span>
+              <span class="segment-label">${i + 1}. ${secondsToTimestamp(seg.start)} → ${secondsToTimestamp(seg.end)}</span>
+              <span class="segment-duration">(${secondsToTimestamp(seg.end - seg.start)})</span>
+              <span class="segment-speed-tag">${Math.round(seg.factor * 100)}%</span>
+            </span>
+            <button type="button" class="segment-remove" data-index="${i}" title="Retirer">✕</button>
+          </div>`).join("");
+        list.querySelectorAll(".segment-item").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            if (e.target.closest(".segment-remove")) return;
+            const seg = track.segments[Number(el.dataset.index)];
+            const media = activeMediaEl();
+            playRanges(media, [seg], () => { setMediaGain(media, seg.factor); });
+          });
+        });
+        list.querySelectorAll(".segment-remove").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            track.segments.splice(Number(btn.dataset.index), 1);
+            renderVolumeSegments();
+            if (trackEls) renderTrackMarkers(trackEls);
+          });
+        });
+      }
+
+      document.getElementById("volumePreviewBtn")?.addEventListener("click", () => {
+        setMediaGain(activeMediaEl(), 1);
+        playRanges(activeMediaEl(), [{ start: track.start, end: track.end }]);
+      });
+
+      document.getElementById("volumeAddSegmentBtn")?.addEventListener("click", () => {
+        const factor = parseFloat(segmentFactor.value) / 100;
+        const addedEnd = track.end;
+        track.segments.push({ start: track.start, end: track.end, factor });
+        track.segments.sort((a, b) => a.start - b.start);
+        renderVolumeSegments();
+        updateTrackUI(trackEls);
+        if (addedEnd < track.duration - MIN_GAP) {
+          track.start = addedEnd;
+          track.end = track.duration;
+          activeMediaEl().currentTime = track.start;
+          updateTrackUI(trackEls);
+        }
+      });
+
+      // Initialise toujours un track (même en mode global) pour disposer de la durée courante.
+      track = { duration: activeDuration(), start: 0, end: activeDuration(), segments: [], dragging: null };
+      this._getMode = () => mode;
+    },
+    collect() {
+      const mode = this._getMode();
+      setMediaGain(activeMediaEl(), 1);
+      if (mode === "segments") {
+        if (!track.segments.length) throw new Error("Ajoutez au moins un morceau.");
+        return { mode: "segments", segments: track.segments.map((s) => ({ start: secondsToTimestamp(s.start), end: secondsToTimestamp(s.end), factor: s.factor })) };
+      }
+      return { mode: "global", factor: parseFloat(document.getElementById("volumeGlobalFactor").value) / 100 };
     },
   };
 
@@ -1837,7 +2037,7 @@ const FORMS = {
     },
   };
 
-  const CUSTOM_PANELS = { trim: TrimPanel, speed: SpeedPanel, orientation: OrientationPanel };
+  const CUSTOM_PANELS = { trim: TrimPanel, speed: SpeedPanel, orientation: OrientationPanel, volume: VolumePanel };
   let activeCustomPanel = null;
 
   /* ===================== Barre d'onglets + panneau d'action ===================== */
@@ -1857,6 +2057,8 @@ const FORMS = {
     activeCustomPanel = null;
     panelVideo.playbackRate = 1;
     panelAudio.playbackRate = 1;
+    resetMediaGainIfActive(panelVideo);
+    resetMediaGainIfActive(panelAudio);
     selectedType = type;
     renderTabs();
 
@@ -1925,6 +2127,7 @@ const FORMS = {
           stagedSource = null;
           updateActiveClipBanner();
           renderTimeline();
+          pollFilmstrip(timeline[idx]);
         }, (err) => {
           const idx = timeline.findIndex((c) => c.tempId === tempId);
           if (idx !== -1) { timeline.splice(idx, 1); renderTimeline(); }
@@ -1953,6 +2156,7 @@ const FORMS = {
         };
         renderTimeline();
         setActiveClip(activeIndex);
+        pollFilmstrip(timeline[activeIndex]);
       }, (err) => {
         overlay.hidden = true;
         statusEl.textContent = err;
@@ -2040,6 +2244,7 @@ const FORMS = {
         }];
         activeIndex = 0;
         setActiveClip(0);
+        pollFilmstrip(timeline[0]);
       })
       .catch(() => {
         statusEl.textContent = "Impossible de charger ce projet.";
