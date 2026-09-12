@@ -1246,6 +1246,11 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   margin: 0 auto;
 }
 
+.trim-panel-left {
+  max-width: 720px;
+  margin: 0;
+}
+
 /* Orientation */
 .orientation-grid {
   display: grid;
