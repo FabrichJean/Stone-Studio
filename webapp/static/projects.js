@@ -338,10 +338,29 @@ detailsClose.addEventListener("click", closeDetailsModal);
 detailsModal.addEventListener("click", (e) => { if (e.target === detailsModal) closeDetailsModal(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !detailsModal.hidden) closeDetailsModal(); });
 
+// La miniature/bande de vignettes se génère en arrière-plan côté serveur (voir save_project
+// dans main.py) : un projet vidéo tout juste créé peut donc apparaître sans image un court
+// instant. On rafraîchit la liste jusqu'à ce que toutes les miniatures en attente soient prêtes.
+function refreshPendingThumbnails(attemptsLeft = 20) {
+  const pending = allProjects.some((p) => p.media_type === "video" && !p.has_thumbnail);
+  if (!pending || attemptsLeft <= 0) return;
+  setTimeout(() => {
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((data) => {
+        allProjects = data;
+        renderProjects();
+        refreshPendingThumbnails(attemptsLeft - 1);
+      })
+      .catch(() => {});
+  }, 1500);
+}
+
 fetch("/api/projects")
   .then((r) => r.json())
   .then((data) => {
     allProjects = data;
     buildToolFilterMenu();
     renderProjects();
+    refreshPendingThumbnails();
   });
