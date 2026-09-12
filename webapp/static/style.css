@@ -2498,6 +2498,38 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   margin-bottom: 12px;
 }
 
+.screen-only-field[hidden] {
+  display: none;
+}
+
+.record-audio-stage {
+  flex-direction: column;
+  gap: 14px;
+  padding: 48px 0;
+}
+
+.record-audio-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.record-audio-visual .icon { color: var(--accent); }
+
+/* L'audio n'a pas de cadre-image : le badge REC se repère par rapport au panneau lui-même. */
+.record-audio-stage .rec-badge {
+  position: static;
+  margin-top: 4px;
+}
+
+.video-stage #resultAudioPreview {
+  width: 100%;
+  max-width: 420px;
+}
+
 .record-controls { margin-top: 20px; }
 .record-controls .record-btn { margin-top: 0; }
 .record-controls .btn-secondary { flex: 1; justify-content: center; }
