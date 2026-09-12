@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "tools" / "orientation"))
 sys.path.insert(0, str(ROOT / "tools" / "screen_record"))
 sys.path.insert(0, str(ROOT / "tools" / "noise_removal"))
 sys.path.insert(0, str(ROOT / "tools" / "remake_sound"))
+sys.path.insert(0, str(ROOT / "tools" / "volume_media"))
 sys.path.insert(0, str(ROOT / "tools" / "compress_media"))
 from compress_media import LEVELS as COMPRESS_LEVELS, RESOLUTIONS, compress_video  # noqa: E402
 from extract_audio import FORMATS, extract_audio  # noqa: E402
@@ -45,6 +46,7 @@ from noise_removal import LEVELS as NOISE_LEVELS, remove_noise  # noqa: E402
 from remake_sound import PRESETS as REMAKE_PRESETS, remake_sound  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
+from volume_media import change_volume, volume_segments  # noqa: E402
 from studio_chain import concat_clips, run_chain  # noqa: E402
 
 UPLOADS_DIR = ROOT / "uploads"
@@ -64,6 +66,7 @@ TRIM_JOBS: dict[str, dict] = {}
 RECORD_JOBS: dict[str, dict] = {}
 ORIENTATION_JOBS: dict[str, dict] = {}
 SPEED_JOBS: dict[str, dict] = {}
+VOLUME_JOBS: dict[str, dict] = {}
 STUDIO_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
@@ -103,6 +106,7 @@ TOOL_LABELS = {
     "screen_record": "Enregistrement écran",
     "noise_removal": "Suppression bruit",
     "remake_sound": "Remake sound",
+    "volume_media": "Volume",
     "compress_media": "Compression vidéo",
     "studio_chain": "Studio",
 }
@@ -118,6 +122,7 @@ PAGE_TITLES = {
     "screen_record": "Enregistrement écran",
     "noise_removal": "Suppression bruit",
     "remake_sound": "Remake sound",
+    "volume_media": "Volume",
     "compress_media": "Compression vidéo",
     "projects": "Mes projets",
 }
@@ -364,6 +369,11 @@ def remake_sound_page(request: Request):
     return templates.TemplateResponse(
         request, "remake_sound.html", {"active_tool": "remake_sound", "presets": REMAKE_PRESETS}
     )
+
+
+@app.get("/volume")
+def volume_page(request: Request):
+    return templates.TemplateResponse(request, "volume.html", {"active_tool": "volume_media"})
 
 
 @app.get("/compress")
@@ -957,6 +967,91 @@ async def api_remake_sound(
         output_path, filename=output_name, media_type="application/octet-stream",
         headers={"X-Project-Id": Path(output_file).stem},
     )
+
+
+def _run_volume_job(
+    job_id: str, media_path: Path, output_path: Path, filename: str,
+    mode: str, factor: float | None, segments: list[dict] | None,
+) -> None:
+    def on_progress(frac: float) -> None:
+        VOLUME_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    try:
+        if mode == "global":
+            change_volume(media_path, output_path, factor, on_progress)
+        else:
+            volume_segments(media_path, segments, output_path, on_progress)
+    except (RuntimeError, ValueError) as e:
+        VOLUME_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    stem = Path(filename).stem
+    output_name = f"{stem}_volume{output_path.suffix}"
+    save_project("volume_media", filename, "output", output_path.name, output_name)
+    VOLUME_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": Path(output_path.name).stem,
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+    }
+
+
+@app.post("/api/volume-media")
+async def api_volume_media(
+    media: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
+    mode: str = Form(...),  # "global" | "segments"
+    factor: float | None = Form(None),
+    segments: str | None = Form(None),  # JSON: [{"start","end","factor"}, ...]
+):
+    if mode not in ("global", "segments"):
+        raise HTTPException(400, "Mode invalide (global ou segments).")
+
+    seg_pairs = None
+    if mode == "global":
+        if factor is None or factor < 0:
+            raise HTTPException(400, "Facteur de volume invalide.")
+    else:
+        try:
+            seg_list = json.loads(segments or "[]")
+        except json.JSONDecodeError as e:
+            raise HTTPException(400, "Le champ 'segments' doit être un JSON valide.") from e
+
+        if not isinstance(seg_list, list) or not seg_list:
+            raise HTTPException(400, "Au moins un segment est requis.")
+
+        seg_pairs = []
+        for seg in seg_list:
+            start, end, seg_factor = seg.get("start"), seg.get("end"), seg.get("factor")
+            if not is_valid_time(start or "") or not is_valid_time(end or ""):
+                raise HTTPException(400, "Format de temps invalide dans un des segments. Utiliser HH:MM:SS.")
+            if seg_factor is None or seg_factor < 0:
+                raise HTTPException(400, "Facteur de volume invalide dans un des segments.")
+            seg_pairs.append({"start": start, "end": end, "factor": float(seg_factor)})
+
+    job_id = uuid.uuid4().hex
+    media_path, filename = _resolve_input(media, source_project_id, job_id)
+    suffix = Path(filename).suffix
+    output_file = f"{job_id}{suffix}"
+    output_path = OUTPUT_DIR / output_file
+
+    VOLUME_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_volume_job,
+        args=(job_id, media_path, output_path, filename, mode, factor, seg_pairs),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"job_id": job_id}
+
+
+@app.get("/api/volume-media/{job_id}/progress")
+def volume_progress(job_id: str):
+    job = VOLUME_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
 
 
 def _run_compress_job(job_id: str, video_path: Path, output_path: Path, filename: str, level: str,
