@@ -1,17 +1,23 @@
 const setupPanel = document.getElementById("setupPanel");
+const recordModeToggle = document.getElementById("recordModeToggle");
 const selectHint = document.getElementById("selectHint");
 const captureStage = document.getElementById("captureStage");
 const livePreview = document.getElementById("livePreview");
 const cropOverlay = document.getElementById("cropOverlay");
 const cropBox = document.getElementById("cropBox");
+const audioStage = document.getElementById("audioStage");
+const audioRecBadge = document.getElementById("audioRecBadge");
+const audioRecState = document.getElementById("audioRecState");
 const resultStage = document.getElementById("resultStage");
 const resultPreview = document.getElementById("resultPreview");
+const resultAudioPreview = document.getElementById("resultAudioPreview");
 const recBadge = document.getElementById("recBadge");
 const recState = document.getElementById("recState");
 const timerRow = document.getElementById("timerRow");
 const timer = document.getElementById("timer");
 const sizeLabel = document.getElementById("sizeLabel");
 const startBtn = document.getElementById("startBtn");
+const startBtnLabel = document.getElementById("startBtnLabel");
 const resetCropBtn = document.getElementById("resetCropBtn");
 const cancelSelectBtn = document.getElementById("cancelSelectBtn");
 const confirmStartBtn = document.getElementById("confirmStartBtn");
@@ -29,12 +35,16 @@ const info = document.getElementById("info");
 
 const MIN_SELECT = 0.04; // taille minimale (fraction) de la zone dessinée
 
+let recordMode = "screen"; // "screen" | "audio"
+
 let captureStream = null; // flux écran (+ son système), brut de getDisplayMedia
 let micStream = null;
 let audioContext = null;
+let audioOnlyStream = null; // flux micro seul (mode "audio")
 let pendingStream = null; // flux combiné (vidéo + audio mixé) en attente de confirmation
 let pendingVideoTrack = null;
 let pendingFps = 30;
+let resultUrl = null; // URL objet du dernier aperçu affiché (vidéo ou audio)
 
 let selectRect = null; // { x, y, w, h } en fractions (0..1) de l'aperçu, ou null = écran entier
 let dragMode = null; // "draw" | "move" | "resize" | null
@@ -57,9 +67,16 @@ let pausedTotal = 0; // millisecondes cumulées en pause
 let pausedAt = 0;
 let tickHandle = null;
 
-if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.MediaRecorder) {
+const hasDisplayCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+const hasAudioCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+if (!window.MediaRecorder || (!hasDisplayCapture && !hasAudioCapture)) {
   document.getElementById("unsupported").hidden = false;
   startBtn.disabled = true;
+} else if (!hasDisplayCapture) {
+  // Partage d'écran indisponible (ex. certains navigateurs mobiles) : audio seul.
+  recordModeToggle.querySelector('[data-mode="screen"]').disabled = true;
+  setRecordMode("audio");
 }
 
 /* ---------- Utilitaires ---------- */
@@ -98,6 +115,64 @@ function pickMimeType() {
 function videoBitrate(height, fps) {
   const base = height >= 1080 ? 8_000_000 : height >= 720 ? 5_000_000 : 2_500_000;
   return fps >= 60 ? base * 1.5 : base;
+}
+
+function pickAudioMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+}
+
+/* ---------- Mode : écran ou audio seul ---------- */
+
+const FORMAT_OPTIONS = {
+  screen: [
+    { value: "mp4", label: "MP4 (H.264)" },
+    { value: "webm", label: "WebM (VP9)" },
+  ],
+  audio: [
+    { value: "mp3", label: "MP3" },
+    { value: "wav", label: "WAV" },
+    { value: "m4a", label: "M4A (AAC)" },
+  ],
+};
+
+function setRecordMode(mode) {
+  recordMode = mode;
+  recordModeToggle.querySelectorAll(".mode-toggle-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+  document.querySelectorAll(".screen-only-field").forEach((el) => {
+    el.hidden = mode === "audio";
+  });
+
+  const formatSelect = document.getElementById("format");
+  formatSelect.innerHTML = FORMAT_OPTIONS[mode]
+    .map((o, i) => `<option value="${o.value}"${i === 0 ? " selected" : ""}>${o.label}</option>`)
+    .join("");
+
+  const micAudio = document.getElementById("micAudio");
+  if (mode === "audio") {
+    micAudio.checked = true;
+    micAudio.disabled = true;
+    startBtnLabel.textContent = "Démarrer l'enregistrement";
+  } else {
+    micAudio.disabled = false;
+    startBtnLabel.textContent = "Choisir l'écran";
+  }
+}
+
+recordModeToggle.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+  btn.addEventListener("click", () => setRecordMode(btn.dataset.mode));
+});
+
+/* ---------- Badge REC : le badge actif dépend du mode ---------- */
+
+function activeRecBadge() {
+  return recordMode === "audio" ? audioRecBadge : recBadge;
+}
+
+function activeRecState() {
+  return recordMode === "audio" ? audioRecState : recState;
 }
 
 /* ---------- Capture ---------- */
@@ -157,8 +232,9 @@ async function buildStream() {
 function releaseStreams() {
   if (captureStream) captureStream.getTracks().forEach((t) => t.stop());
   if (micStream) micStream.getTracks().forEach((t) => t.stop());
+  if (audioOnlyStream) audioOnlyStream.getTracks().forEach((t) => t.stop());
   if (audioContext) audioContext.close();
-  captureStream = micStream = audioContext = null;
+  captureStream = micStream = audioContext = audioOnlyStream = null;
   pendingStream = pendingVideoTrack = null;
   stopCropLoop();
 }
@@ -357,7 +433,15 @@ function buildCroppedStream(stream, videoTrack, fps, rect) {
 
 /* ---------- Actions ---------- */
 
-startBtn.addEventListener("click", async () => {
+startBtn.addEventListener("click", () => {
+  if (recordMode === "audio") {
+    startAudioRecording();
+  } else {
+    startScreenSelection();
+  }
+});
+
+async function startScreenSelection() {
   setStatus("");
   startBtn.disabled = true;
 
@@ -397,7 +481,7 @@ startBtn.addEventListener("click", async () => {
 
   enterSelectionMode();
   setStatus("Choisissez la zone à enregistrer, puis démarrez.");
-});
+}
 
 function cancelSelection() {
   releaseStreams();
@@ -471,21 +555,91 @@ confirmStartBtn.addEventListener("click", () => {
   setStatus("Enregistrement en cours…");
 });
 
+async function startAudioRecording() {
+  setStatus("");
+  startBtn.disabled = true;
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
+  } catch (e) {
+    startBtn.disabled = false;
+    if (e.name !== "NotAllowedError") setStatus(`Impossible d'accéder au micro : ${e.message}`, "error");
+    return;
+  }
+
+  audioOnlyStream = stream;
+
+  chunks = [];
+  recordedBytes = 0;
+  recordedBlob = null;
+  const mimeType = pickAudioMimeType();
+
+  recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+
+  recorder.ondataavailable = (e) => {
+    if (e.data && e.data.size) {
+      chunks.push(e.data);
+      recordedBytes += e.data.size;
+    }
+  };
+
+  recorder.onstop = () => finishRecording(mimeType);
+
+  // Le micro peut être coupé/débranché en cours de route.
+  stream.getAudioTracks()[0].addEventListener("ended", stopRecording, { once: true });
+
+  recorder.start(1000);
+
+  startedAt = Date.now();
+  pausedTotal = 0;
+  pausedAt = 0;
+  timer.textContent = "00:00";
+  sizeLabel.textContent = "0.0 MB";
+
+  setupPanel.hidden = true;
+  resultStage.hidden = true;
+  retryBtn.hidden = true;
+  restartBtn.hidden = true;
+  downloadBtn.hidden = true;
+  progressWrap.hidden = true;
+  sendToWrap.hidden = true;
+  savedProjectId = null;
+  info.innerHTML = "";
+
+  audioStage.hidden = false;
+  audioRecBadge.hidden = false;
+  audioRecState.textContent = "REC";
+  audioRecBadge.classList.remove("paused");
+  startBtn.hidden = true;
+  timerRow.hidden = false;
+  pauseBtn.hidden = false;
+  stopBtn.hidden = false;
+  pauseBtn.innerHTML = `${iconHtml("pause")} Pause`;
+
+  startTicker();
+  setStatus("Enregistrement audio en cours…");
+}
+
 pauseBtn.addEventListener("click", () => {
   if (!recorder) return;
+  const badge = activeRecBadge();
+  const state = activeRecState();
 
   if (recorder.state === "recording") {
     recorder.pause();
     pausedAt = Date.now();
-    recState.textContent = "PAUSE";
-    recBadge.classList.add("paused");
+    state.textContent = "PAUSE";
+    badge.classList.add("paused");
     pauseBtn.innerHTML = `${iconHtml("play")} Reprendre`;
     setStatus("Enregistrement en pause.");
   } else if (recorder.state === "paused") {
     recorder.resume();
     pausedTotal += Date.now() - pausedAt;
-    recState.textContent = "REC";
-    recBadge.classList.remove("paused");
+    state.textContent = "REC";
+    badge.classList.remove("paused");
     pauseBtn.innerHTML = `${iconHtml("pause")} Pause`;
     setStatus("Enregistrement en cours…");
   }
@@ -507,16 +661,31 @@ function finishRecording(mimeType) {
   releaseStreams();
   livePreview.srcObject = null;
 
-  recordedBlob = new Blob(chunks, { type: mimeType || "video/webm" });
+  recordedBlob = new Blob(chunks, { type: mimeType || (recordMode === "audio" ? "audio/webm" : "video/webm") });
   recordedName = timestampName();
 
   captureStage.hidden = true;
+  audioStage.hidden = true;
   recBadge.hidden = true;
+  audioRecBadge.hidden = true;
   pauseBtn.hidden = true;
   stopBtn.hidden = true;
   restartBtn.hidden = false;
 
-  resultPreview.src = URL.createObjectURL(recordedBlob);
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = URL.createObjectURL(recordedBlob);
+
+  if (recordMode === "audio") {
+    resultPreview.hidden = true;
+    resultPreview.removeAttribute("src");
+    resultAudioPreview.hidden = false;
+    resultAudioPreview.src = resultUrl;
+  } else {
+    resultAudioPreview.hidden = true;
+    resultAudioPreview.removeAttribute("src");
+    resultPreview.hidden = false;
+    resultPreview.src = resultUrl;
+  }
   resultStage.hidden = false;
 
   timer.textContent = formatClock(duration);
@@ -532,8 +701,10 @@ function finishRecording(mimeType) {
 }
 
 restartBtn.addEventListener("click", () => {
-  if (resultPreview.src) URL.revokeObjectURL(resultPreview.src);
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = null;
   resultPreview.removeAttribute("src");
+  resultAudioPreview.removeAttribute("src");
   recordedBlob = null;
   chunks = [];
   savedProjectId = null;
