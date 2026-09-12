@@ -1193,6 +1193,35 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.page-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.sub-tool-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin: 0 0 24px;
+}
+
+.sub-tool-tab {
+  padding: 10px 6px;
+  margin: 0 8px -1px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.sub-tool-tab:hover { color: var(--text-dark); }
+.sub-tool-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
 .panels {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -1248,6 +1277,39 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   background: #fbf3ee;
   color: var(--accent);
 }
+
+/* Remake sound */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.preset-card:hover { background: #f5f2ec; }
+
+.preset-card.active {
+  border-color: var(--accent);
+  background: #fbf3ee;
+}
+
+.preset-card-title { font-size: 13px; font-weight: 600; color: var(--text-dark); }
+.preset-card.active .preset-card-title { color: var(--accent); }
+.preset-card-desc { font-size: 12px; line-height: 1.4; }
 
 /* Speed */
 .mode-toggle {
