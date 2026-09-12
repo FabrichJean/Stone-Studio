@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
-for _pkg in ("extract_audio", "trim_media", "speed_media", "orientation", "noise_removal", "compress_media"):
+for _pkg in (
+    "extract_audio", "trim_media", "speed_media", "orientation", "noise_removal",
+    "remake_sound", "volume_media", "compress_media",
+):
     sys.path.insert(0, str(ROOT / "tools" / _pkg))
 
 from extract_audio import extract_audio  # noqa: E402
@@ -17,6 +20,8 @@ from speed_media import change_speed, speed_segments  # noqa: E402
 from orientation import change_orientation, orient_segments  # noqa: E402
 from compress_media import compress_video  # noqa: E402
 from noise_removal import remove_noise  # noqa: E402
+from remake_sound import remake_sound  # noqa: E402
+from volume_media import change_volume, volume_segments  # noqa: E402
 
 ProgressCallback = Callable[[float], None]
 
@@ -30,6 +35,8 @@ STEP_LABELS = {
     "compress": "Compression",
     "extract_audio": "Audio",
     "noise_removal": "Suppression bruit",
+    "remake_sound": "Remake sound",
+    "volume": "Volume",
 }
 
 # Ces étapes exigent un flux vidéo : si "Audio" (extraction) tourne avant elles dans la
@@ -115,6 +122,25 @@ def _run_noise_removal(inp: Path, out: Path, params: dict, on_progress: Progress
         on_progress(1.0)
 
 
+def _run_remake_sound(inp: Path, out: Path, params: dict, on_progress: ProgressCallback | None) -> None:
+    remake_sound(inp, out, params.get("preset", "cinematic"))
+    if on_progress:
+        on_progress(1.0)
+
+
+def _run_volume(inp: Path, out: Path, params: dict, on_progress: ProgressCallback | None) -> None:
+    if params.get("mode") == "segments":
+        segments = params.get("segments") or []
+        if not segments:
+            raise ChainError("Volume : ajoutez au moins un morceau.")
+        volume_segments(inp, segments, out, on_progress=on_progress)
+        return
+    factor = params.get("factor")
+    if factor is None:
+        raise ChainError("Volume : facteur invalide.")
+    change_volume(inp, out, float(factor), on_progress=on_progress)
+
+
 RUNNERS = {
     "trim": _run_trim,
     "speed": _run_speed,
@@ -122,6 +148,8 @@ RUNNERS = {
     "compress": _run_compress,
     "extract_audio": _run_extract_audio,
     "noise_removal": _run_noise_removal,
+    "remake_sound": _run_remake_sound,
+    "volume": _run_volume,
 }
 
 
