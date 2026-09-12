@@ -47,7 +47,7 @@ from remake_sound import PRESETS as REMAKE_PRESETS, remake_sound  # noqa: E402
 from speed_media import change_speed, speed_segments  # noqa: E402
 from trim_media import combine_segments, is_valid_time  # noqa: E402
 from volume_media import change_volume, volume_segments  # noqa: E402
-from studio_chain import concat_clips, run_chain  # noqa: E402
+from studio_chain import concat_clips_with_overlays, run_chain  # noqa: E402
 
 UPLOADS_DIR = ROOT / "uploads"
 OUTPUT_DIR = ROOT / "output"
@@ -312,13 +312,15 @@ def studio_render_progress(job_id: str):
     return job
 
 
-def _run_timeline_export_job(job_id: str, paths: list[Path], base_name: str) -> None:
+def _run_timeline_export_job(
+    job_id: str, paths: list[Path], overlays: list[dict], base_name: str
+) -> None:
     def on_progress(frac: float) -> None:
         STUDIO_JOBS[job_id]["percent"] = round(frac * 100, 1)
 
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            result_path = concat_clips(paths, Path(tmp), on_progress)
+            result_path = concat_clips_with_overlays(paths, overlays, Path(tmp), on_progress)
         except Exception as e:
             # Toute exception (pas seulement ChainError) doit marquer le job en erreur, sinon
             # elle tue silencieusement ce thread et le frontend sonde indéfiniment un job
@@ -343,12 +345,19 @@ def _run_timeline_export_job(job_id: str, paths: list[Path], base_name: str) -> 
 
 
 @app.post("/api/studio/export-timeline")
-async def api_studio_export_timeline(clip_ids: str = Form(...)):
+async def api_studio_export_timeline(
+    clip_ids: str = Form(...),
+    audio_overlays: str = Form("[]"),  # JSON: [{"id","start"}, ...] — piste audio parallèle
+):
     try:
         ids = json.loads(clip_ids)
     except json.JSONDecodeError:
         raise HTTPException(400, "Timeline invalide")
-    if not ids:
+    try:
+        overlay_specs = json.loads(audio_overlays)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Piste audio invalide")
+    if not ids and not overlay_specs:
         raise HTTPException(400, "La timeline est vide")
 
     paths = []
@@ -359,10 +368,17 @@ async def api_studio_export_timeline(clip_ids: str = Form(...)):
         if base_name is None:
             base_name = Path(record["output_name"]).stem
 
+    overlays = []
+    for spec in overlay_specs:
+        path, record = _resolve_project_path(spec["id"])
+        overlays.append({"path": path, "start": max(0.0, float(spec.get("start", 0)))})
+        if base_name is None:
+            base_name = Path(record["output_name"]).stem
+
     job_id = uuid.uuid4().hex
     STUDIO_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
-        target=_run_timeline_export_job, args=(job_id, paths, base_name), daemon=True,
+        target=_run_timeline_export_job, args=(job_id, paths, overlays, base_name), daemon=True,
     )
     thread.start()
     return {"job_id": job_id}
