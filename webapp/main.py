@@ -35,7 +35,9 @@ from orientation import (  # noqa: E402
     orient_segments,
 )
 from screen_record import (  # noqa: E402
+    AUDIO_FORMATS as RECORD_AUDIO_FORMATS,
     FORMATS as RECORD_FORMATS,
+    finalize_audio_recording,
     finalize_recording,
 )
 from noise_removal import LEVELS as NOISE_LEVELS, remove_noise  # noqa: E402
@@ -819,14 +821,19 @@ def _run_record_job(
     def on_progress(frac: float) -> None:
         RECORD_JOBS[job_id]["percent"] = round(frac * 100, 1)
 
+    is_audio = format in RECORD_AUDIO_FORMATS
     try:
-        finalize_recording(raw_path, output_path, format, on_progress, known_duration=duration)
+        if is_audio:
+            finalize_audio_recording(raw_path, output_path, format, on_progress, known_duration=duration)
+        else:
+            finalize_recording(raw_path, output_path, format, on_progress, known_duration=duration)
     except RuntimeError as e:
         RECORD_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
         return
 
+    all_formats = RECORD_AUDIO_FORMATS if is_audio else RECORD_FORMATS
     stem = Path(name).stem if name else f"enregistrement_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    output_name = f"{stem}{RECORD_FORMATS[format]['suffix']}"
+    output_name = f"{stem}{all_formats[format]['suffix']}"
     save_project("screen_record", None, "output", output_path.name, output_name)
     RECORD_JOBS[job_id] = {
         "status": "done", "percent": 100,
@@ -843,14 +850,15 @@ async def api_screen_record(
     name: str | None = Form(None),
     duration: float | None = Form(None),
 ):
-    if format not in RECORD_FORMATS:
+    if format not in RECORD_FORMATS and format not in RECORD_AUDIO_FORMATS:
         raise HTTPException(400, f"Format non supporté : {format}")
 
+    all_formats = RECORD_AUDIO_FORMATS if format in RECORD_AUDIO_FORMATS else RECORD_FORMATS
     job_id = uuid.uuid4().hex
     raw_suffix = Path(recording.filename or "capture.webm").suffix or ".webm"
     raw_file = f"{job_id}_capture{raw_suffix}"
     raw_path = UPLOADS_DIR / raw_file
-    output_file = f"{job_id}{RECORD_FORMATS[format]['suffix']}"
+    output_file = f"{job_id}{all_formats[format]['suffix']}"
     output_path = OUTPUT_DIR / output_file
 
     with raw_path.open("wb") as f:
