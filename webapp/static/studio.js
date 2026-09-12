@@ -215,6 +215,8 @@ const FORMS = {
   const studioTimelinePanel = document.getElementById("studioTimelinePanel");
   const timelinePlayhead = document.getElementById("timelinePlayhead");
   const timelineScroll = document.querySelector(".studio-timeline-scroll");
+  const audioOverlayTrack = document.getElementById("audioOverlayTrack");
+  const audioOverlayHint = document.getElementById("audioOverlayHint");
   const transportStartBtn = document.getElementById("transportStart");
   const transportPlayBtn = document.getElementById("transportPlay");
   const transportEndBtn = document.getElementById("transportEnd");
@@ -316,6 +318,10 @@ const FORMS = {
   const MIN_CLIP_PX = 50;
 
   let timeline = []; // { id: projectId, name, mediaType, size, duration, hasFilmstrip, localUrl?, pending? }
+  // Piste audio parallèle : mêmes champs que `timeline`, plus `start` (secondes) — positionnement
+  // libre plutôt que séquentiel, donc ces clips peuvent se superposer entre eux et avec la
+  // piste principale.
+  let audioOverlays = []; // { id, name, size, duration, start, localUrl?, pending? }
   let activeIndex = -1;
   let selectedType = STUDIO_ACTIONS[0].type;
   let destination = "replace"; // "replace" | "add"
@@ -331,6 +337,17 @@ const FORMS = {
   let dragGhost = null; // clone flottant (position: fixed) qui suit le pointeur pendant le glisser
   let dragGrabOffsetX = 0;
   let dragGrabOffsetY = 0;
+
+  // Glisser-déposer sur la piste audio parallèle : repositionnement libre (temps, pas index)
+  // à l'intérieur de la piste, ou conversion vers/depuis la piste principale selon l'axe Y.
+  let overlayDragIndex = null;
+  let overlayDragStartX = null;
+  let overlayDragStartY = null;
+  let overlayDragEngaged = false;
+  let overlayDragOriginStart = 0;
+  let overlayDragGhost = null;
+  let overlayDragGrabOffsetX = 0;
+  let overlayDragGrabOffsetY = 0;
 
   function toolInputClip() {
     return stagedSource || timeline[activeIndex];
@@ -537,6 +554,7 @@ const FORMS = {
   function resetStudio() {
     if (transportPlaying) pauseTransport();
     timeline = [];
+    audioOverlays = [];
     activeIndex = -1;
     stagedSource = null;
     playingIndex = -1;
@@ -745,15 +763,54 @@ const FORMS = {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
     studioTimelinePanel.classList.add("dragover");
+    audioOverlayTrack.classList.toggle("dragover", Boolean(e.target.closest("#audioOverlayTrack")));
   });
   studioTimelinePanel.addEventListener("dragleave", (e) => {
     if (e.relatedTarget && studioTimelinePanel.contains(e.relatedTarget)) return;
     studioTimelinePanel.classList.remove("dragover");
+    audioOverlayTrack.classList.remove("dragover");
   });
+  // Un fichier audio déposé directement sur la piste parallèle y devient un clip superposé,
+  // positionné à l'endroit du dépôt — plutôt que d'être ajouté à la suite sur la piste
+  // principale comme un dépôt ailleurs dans le panneau.
+  function addFileToAudioOverlay(file, clientX) {
+    const rect = audioOverlayTrack.getBoundingClientRect();
+    const start = Math.max(0, (clientX - rect.left) / PX_PER_SEC);
+    const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    audioOverlays.push({ tempId, pending: true, mediaType: "audio", duration: null, name: file.name, start });
+    renderTimeline();
+
+    const formData = new FormData();
+    appendMediaField(formData, file, "file");
+    fetch("/api/studio/upload", { method: "POST", body: formData })
+      .then((r) => r.json())
+      .then((record) => {
+        const idx = audioOverlays.findIndex((c) => c.tempId === tempId);
+        if (idx === -1) return;
+        audioOverlays[idx] = {
+          id: record.id, name: record.output_name, mediaType: record.media_type,
+          size: record.output_size, duration: record.duration, start,
+        };
+        renderTimeline();
+      })
+      .catch(() => {
+        const idx = audioOverlays.findIndex((c) => c.tempId === tempId);
+        if (idx !== -1) { audioOverlays.splice(idx, 1); renderTimeline(); }
+        statusEl.textContent = "Erreur lors de l'import du fichier.";
+        statusEl.className = "status error";
+      });
+  }
+
   studioTimelinePanel.addEventListener("drop", (e) => {
     e.preventDefault();
     studioTimelinePanel.classList.remove("dragover");
-    Array.from(e.dataTransfer.files).forEach(addFileToTimeline);
+    audioOverlayTrack.classList.remove("dragover");
+    const files = Array.from(e.dataTransfer.files);
+    if (e.target.closest("#audioOverlayTrack")) {
+      files.filter((f) => f.type.startsWith("audio/")).forEach((f) => addFileToAudioOverlay(f, e.clientX));
+    } else {
+      files.forEach(addFileToTimeline);
+    }
   });
 
   /* ===================== Choisir un projet existant comme remplacement ===================== */
@@ -847,9 +904,19 @@ const FORMS = {
     }, 1500);
   }
 
+  function overlayEnd(clip) {
+    return (clip.start || 0) + (clip.duration || 3);
+  }
+
   function renderTimeline() {
-    const totalDuration = timeline.reduce((sum, c) => sum + (c.duration || 3), 0);
-    const totalWidth = Math.max(timeline.reduce((sum, c) => sum + clipWidth(c), 0), 1);
+    const mainDuration = timeline.reduce((sum, c) => sum + (c.duration || 3), 0);
+    const overlayDuration = audioOverlays.reduce((max, c) => Math.max(max, overlayEnd(c)), 0);
+    const totalDuration = Math.max(mainDuration, overlayDuration);
+    const totalWidth = Math.max(
+      timeline.reduce((sum, c) => sum + clipWidth(c), 0),
+      Math.round(overlayDuration * PX_PER_SEC),
+      1
+    );
 
     timelineRuler.style.width = `${totalWidth}px`;
     timelineRuler.innerHTML = "";
@@ -907,8 +974,58 @@ const FORMS = {
 
       timelineTrack.appendChild(block);
     });
-    exportBtn.disabled = timeline.length === 0 || timeline.some((c) => c.pending);
+
+    renderAudioOverlayTrack(totalWidth);
+
+    exportBtn.disabled =
+      (timeline.length === 0 && audioOverlays.length === 0) ||
+      timeline.some((c) => c.pending) ||
+      audioOverlays.some((c) => c.pending);
     updatePlayheadUI();
+  }
+
+  function renderAudioOverlayTrack(totalWidth) {
+    audioOverlayTrack.hidden = timeline.length === 0 && audioOverlays.length === 0;
+    audioOverlayHint.hidden = audioOverlayTrack.hidden;
+    audioOverlayTrack.style.width = `${totalWidth}px`;
+    audioOverlayTrack.innerHTML = "";
+
+    audioOverlays.forEach((clip, i) => {
+      const block = document.createElement("div");
+      if (clip.pending) {
+        block.className = "studio-clip studio-clip-overlay studio-clip-audio studio-clip-pending";
+        block.style.left = `${Math.round((clip.start || 0) * PX_PER_SEC)}px`;
+        block.style.width = `${clipWidth(clip)}px`;
+        block.innerHTML = `<div class="spinner"></div>`;
+        audioOverlayTrack.appendChild(block);
+        return;
+      }
+
+      block.className = "studio-clip studio-clip-overlay studio-clip-audio";
+      block.style.left = `${Math.round((clip.start || 0) * PX_PER_SEC)}px`;
+      block.style.width = `${clipWidth(clip)}px`;
+      block.innerHTML = `
+        <span class="studio-clip-label">${clip.name}</span>
+        <button type="button" class="studio-clip-remove" title="Retirer">✕</button>`;
+      block.querySelector(".studio-clip-remove").addEventListener("click", () => removeOverlayClip(i));
+
+      block.addEventListener("pointerdown", (e) => {
+        if (e.target.closest(".studio-clip-remove") || !clip.id) return;
+        e.stopPropagation();
+        overlayDragIndex = i;
+        overlayDragStartX = e.clientX;
+        overlayDragStartY = e.clientY;
+        overlayDragEngaged = false;
+        overlayDragOriginStart = clip.start || 0;
+      });
+
+      audioOverlayTrack.appendChild(block);
+    });
+  }
+
+  function removeOverlayClip(index) {
+    audioOverlays.splice(index, 1);
+    renderTimeline();
   }
 
   function reorderClip(fromIndex, toIndex) {
@@ -961,31 +1078,122 @@ const FORMS = {
     timelineTrack.querySelectorAll(".drop-before, .drop-after").forEach((b) => b.classList.remove("drop-before", "drop-after"));
     // Le clone a pointer-events:none, donc elementFromPoint "voit à travers" jusqu'à la
     // vraie cible sous le curseur.
-    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".studio-clip");
+    const hovered = document.elementFromPoint(e.clientX, e.clientY);
+    const target = hovered?.closest(".studio-clip");
     if (target && target.parentElement === timelineTrack) {
       const rect = target.getBoundingClientRect();
       const before = e.clientX - rect.left < rect.width / 2;
       target.classList.toggle("drop-before", before);
       target.classList.toggle("drop-after", !before);
     }
+
+    // Glisser un clip audio vers le bas, sur la piste parallèle, permet de le superposer au
+    // reste de la timeline plutôt que de l'insérer dans l'ordre séquentiel.
+    const draggedClip = timeline[dragSourceIndex];
+    const overOverlay = hovered?.closest("#audioOverlayTrack");
+    audioOverlayTrack.classList.toggle("dragover", Boolean(overOverlay && draggedClip && draggedClip.mediaType === "audio"));
   });
 
   window.addEventListener("pointerup", (e) => {
     if (dragSourceIndex === null) return;
     const fromIndex = dragSourceIndex;
     const wasEngaged = dragEngaged;
+    const draggedClip = timeline[fromIndex];
     if (dragGhost) { dragGhost.remove(); dragGhost = null; }
     timelineTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip", "drop-before", "drop-after"));
+    audioOverlayTrack.classList.remove("dragover");
     dragSourceIndex = null;
     dragEngaged = false;
     if (!wasEngaged) return; // simple clic, pas un glisser
-    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".studio-clip");
+
+    const hovered = document.elementFromPoint(e.clientX, e.clientY);
+
+    if (hovered?.closest("#audioOverlayTrack") && draggedClip && draggedClip.mediaType === "audio") {
+      const rect = audioOverlayTrack.getBoundingClientRect();
+      const start = Math.max(0, (e.clientX - rect.left) / PX_PER_SEC);
+      timeline.splice(fromIndex, 1);
+      audioOverlays.push({ ...draggedClip, start });
+      if (activeIndex === fromIndex) activeIndex = -1;
+      else if (activeIndex > fromIndex) activeIndex -= 1;
+      renderTimeline();
+      return;
+    }
+
+    const target = hovered?.closest(".studio-clip");
     if (!target || target.parentElement !== timelineTrack) return;
     const targetIndex = Array.from(timelineTrack.children).indexOf(target);
     if (targetIndex === -1) return;
     const rect = target.getBoundingClientRect();
     const before = e.clientX - rect.left < rect.width / 2;
     reorderClip(fromIndex, targetIndex + (before ? 0 : 1));
+  });
+
+  function positionOverlayGhost(e) {
+    if (!overlayDragGhost) return;
+    overlayDragGhost.style.left = `${e.clientX - overlayDragGrabOffsetX}px`;
+    overlayDragGhost.style.top = `${e.clientY - overlayDragGrabOffsetY}px`;
+  }
+
+  window.addEventListener("pointermove", (e) => {
+    if (overlayDragIndex === null) return;
+    if (!overlayDragEngaged) {
+      if (Math.abs(e.clientX - overlayDragStartX) < DRAG_REORDER_THRESHOLD && Math.abs(e.clientY - overlayDragStartY) < DRAG_REORDER_THRESHOLD) return;
+      overlayDragEngaged = true;
+      const sourceBlock = audioOverlayTrack.children[overlayDragIndex];
+      if (sourceBlock) {
+        sourceBlock.classList.add("dragging-clip");
+        const rect = sourceBlock.getBoundingClientRect();
+        overlayDragGrabOffsetX = overlayDragStartX - rect.left;
+        overlayDragGrabOffsetY = overlayDragStartY - rect.top;
+        overlayDragGhost = document.createElement("div");
+        overlayDragGhost.className = "studio-clip-ghost studio-clip-audio";
+        overlayDragGhost.style.width = `${rect.width}px`;
+        overlayDragGhost.style.height = `${rect.height}px`;
+        const label = sourceBlock.querySelector(".studio-clip-label");
+        if (label) overlayDragGhost.innerHTML = `<span class="studio-clip-label">${label.textContent}</span>`;
+        document.body.appendChild(overlayDragGhost);
+      }
+    }
+    positionOverlayGhost(e);
+    audioOverlayTrack.classList.toggle("dragover", false); // pas de mise en évidence sur sa propre piste
+  });
+
+  window.addEventListener("pointerup", (e) => {
+    if (overlayDragIndex === null) return;
+    const fromIndex = overlayDragIndex;
+    const wasEngaged = overlayDragEngaged;
+    const clip = audioOverlays[fromIndex];
+    if (overlayDragGhost) { overlayDragGhost.remove(); overlayDragGhost = null; }
+    audioOverlayTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip"));
+    overlayDragIndex = null;
+    overlayDragEngaged = false;
+    if (!wasEngaged) return; // simple clic, pas un glisser
+
+    const hovered = document.elementFromPoint(e.clientX, e.clientY);
+
+    // Reposer sur la piste principale reconvertit le clip en clip séquentiel normal.
+    if (hovered?.closest("#timelineTrack") && clip) {
+      audioOverlays.splice(fromIndex, 1);
+      const target = hovered.closest(".studio-clip");
+      let insertAt = timeline.length;
+      if (target && target.parentElement === timelineTrack) {
+        const idx = Array.from(timelineTrack.children).indexOf(target);
+        const rect = target.getBoundingClientRect();
+        insertAt = idx + (e.clientX - rect.left < rect.width / 2 ? 0 : 1);
+      }
+      const { start, ...clipWithoutStart } = clip;
+      timeline.splice(insertAt, 0, clipWithoutStart);
+      renderTimeline();
+      return;
+    }
+
+    // Repositionnement libre le long de la piste parallèle : le point de dépôt (moins le
+    // décalage de préhension) fixe le nouveau `start` — chevauchement toujours autorisé.
+    if (clip) {
+      const rect = audioOverlayTrack.getBoundingClientRect();
+      clip.start = Math.max(0, (e.clientX - overlayDragGrabOffsetX - rect.left) / PX_PER_SEC);
+    }
+    renderTimeline();
   });
 
   function removeClip(index) {
@@ -2168,7 +2376,8 @@ const FORMS = {
   /* ===================== Export final (assemble la timeline) ===================== */
 
   function runExport() {
-    if (timeline.length === 0 || timeline.some((c) => !c.id)) return;
+    if (timeline.length === 0 && audioOverlays.length === 0) return;
+    if (timeline.some((c) => !c.id) || audioOverlays.some((c) => !c.id)) return;
     exportBtn.disabled = true;
     exportDone.hidden = true;
     exportProgress.hidden = false;
@@ -2177,6 +2386,10 @@ const FORMS = {
 
     const formData = new FormData();
     formData.append("clip_ids", JSON.stringify(timeline.map((c) => c.id)));
+    formData.append(
+      "audio_overlays",
+      JSON.stringify(audioOverlays.map((c) => ({ id: c.id, start: c.start || 0 })))
+    );
 
     fetch("/api/studio/export-timeline", { method: "POST", body: formData })
       .then((r) => r.json())
