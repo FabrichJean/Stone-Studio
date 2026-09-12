@@ -39,9 +39,9 @@
       </a>
 
       <div class="nav-section-label">Outils</div>
-      <a class="nav-item {{ 'active' if active_tool == 'extract_audio' else '' }}" href="/" title="Extraction audio">
+      <a class="nav-item {{ 'active' if active_tool in ('extract_audio', 'noise_removal', 'remake_sound') else '' }}" href="/" title="Son">
         <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V8a6 6 0 0 1 12 0v1"/><rect x="1.5" y="9" width="3" height="4" rx="1"/><rect x="11.5" y="9" width="3" height="4" rx="1"/></svg></span>
-        <span class="nav-label">Extraction audio</span>
+        <span class="nav-label">Son</span>
       </a>
       <a class="nav-item {{ 'active' if active_tool == 'trim_media' else '' }}" href="/trim" title="Trim media">
         <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><path d="M5.3 5L14 14M5.3 11L14 2"/></svg></span>
@@ -59,7 +59,7 @@
         <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg></span>
         <span class="nav-label">Compression vidéo</span>
       </a>
-      <button type="button" id="moreToolsBtn" class="nav-item nav-item-btn {{ 'active' if active_tool in ('screen_record', 'noise_removal') else '' }}" title="Voir plus">
+      <button type="button" id="moreToolsBtn" class="nav-item nav-item-btn {{ 'active' if active_tool == 'screen_record' else '' }}" title="Voir plus">
         <span class="icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1" fill="currentColor" stroke="none"/></svg></span>
         <span class="nav-label">Voir plus</span>
       </button>
@@ -113,11 +113,11 @@
     </div>
 
     <div class="launcher-grid">
-      <a class="tool-tile {{ 'active' if active_tool == 'extract_audio' else '' }}" href="/" data-category="outils">
+      <a class="tool-tile {{ 'active' if active_tool in ('extract_audio', 'noise_removal', 'remake_sound') else '' }}" href="/" data-category="outils">
         <span class="tile-icon" style="background:#d97757">
           <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V8a6 6 0 0 1 12 0v1"/><rect x="1.5" y="9" width="3" height="4" rx="1"/><rect x="11.5" y="9" width="3" height="4" rx="1"/></svg>
         </span>
-        <span>Extraction audio</span>
+        <span>Son</span>
       </a>
       <a class="tool-tile {{ 'active' if active_tool == 'trim_media' else '' }}" href="/trim" data-category="outils">
         <span class="tile-icon" style="background:#3b82f6">
@@ -148,12 +148,6 @@
           <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/><circle cx="8" cy="7" r="1.5" fill="#fff" stroke="none"/></svg>
         </span>
         <span>Enregistrement écran</span>
-      </a>
-      <a class="tool-tile {{ 'active' if active_tool == 'noise_removal' else '' }}" href="/noise-removal" data-category="outils">
-        <span class="tile-icon" style="background:#22c55e">
-          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h2l2-4v8l2-4h2l2 3v-6l2 3"/></svg>
-        </span>
-        <span>Suppression bruit</span>
       </a>
       <div class="tool-tile disabled" data-category="outils">
         <span class="tile-icon tile-icon-disabled">
