@@ -30,6 +30,12 @@ FORMATS = {
     },
 }
 
+AUDIO_FORMATS = {
+    "mp3": {"suffix": ".mp3", "args": ["-c:a", "libmp3lame", "-b:a", "192k"]},
+    "wav": {"suffix": ".wav", "args": ["-c:a", "pcm_s16le"]},
+    "m4a": {"suffix": ".m4a", "args": ["-c:a", "aac", "-b:a", "192k"]},
+}
+
 TIME_RE = re.compile(r"^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$")
 
 ProgressCallback = Callable[[float], None]
@@ -55,23 +61,15 @@ def _parse_out_time(value: str) -> float | None:
     return int(h) * 3600 + int(m) * 60 + float(s)
 
 
-def finalize_recording(
+def _run_with_progress(
+    cmd: list[str],
     input_path: Path,
-    output_path: Path,
-    fmt: str = "mp4",
-    on_progress: ProgressCallback | None = None,
-    known_duration: float | None = None,
+    on_progress: ProgressCallback | None,
+    known_duration: float | None,
 ) -> None:
-    """Réencode l'enregistrement brut vers un fichier lisible et navigable.
-
-    Le conteneur webm brut de MediaRecorder n'a pas de durée fiable dans son en-tête
+    """Le conteneur webm brut de MediaRecorder n'a pas de durée fiable dans son en-tête
     (ffprobe y échoue souvent) : `known_duration` (mesurée côté navigateur pendant
-    l'enregistrement) permet quand même un suivi de progression précis.
-    """
-    if fmt not in FORMATS:
-        raise ValueError(f"Format non supporté : {fmt}")
-
-    cmd = ["ffmpeg", "-y", "-i", str(input_path), *FORMATS[fmt]["args"], str(output_path)]
+    l'enregistrement) permet quand même un suivi de progression précis."""
     duration = known_duration or (probe_duration(input_path) if on_progress else None)
 
     full_cmd = cmd + ["-progress", "pipe:1", "-nostats"]
@@ -95,11 +93,42 @@ def finalize_recording(
         on_progress(1.0)
 
 
+def finalize_recording(
+    input_path: Path,
+    output_path: Path,
+    fmt: str = "mp4",
+    on_progress: ProgressCallback | None = None,
+    known_duration: float | None = None,
+) -> None:
+    """Réencode l'enregistrement vidéo brut vers un fichier lisible et navigable."""
+    if fmt not in FORMATS:
+        raise ValueError(f"Format non supporté : {fmt}")
+
+    cmd = ["ffmpeg", "-y", "-i", str(input_path), *FORMATS[fmt]["args"], str(output_path)]
+    _run_with_progress(cmd, input_path, on_progress, known_duration)
+
+
+def finalize_audio_recording(
+    input_path: Path,
+    output_path: Path,
+    fmt: str = "mp3",
+    on_progress: ProgressCallback | None = None,
+    known_duration: float | None = None,
+) -> None:
+    """Réencode un enregistrement audio seul (micro) capturé par le navigateur."""
+    if fmt not in AUDIO_FORMATS:
+        raise ValueError(f"Format non supporté : {fmt}")
+
+    cmd = ["ffmpeg", "-y", "-i", str(input_path), "-vn", *AUDIO_FORMATS[fmt]["args"], str(output_path)]
+    _run_with_progress(cmd, input_path, on_progress, known_duration)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Finaliser un enregistrement d'écran brut")
+    parser = argparse.ArgumentParser(description="Finaliser un enregistrement d'écran ou audio brut")
     parser.add_argument("recording", type=Path, help="Fichier brut issu du navigateur")
     parser.add_argument(
-        "-f", "--format", choices=FORMATS, default="mp4", help="Format de sortie (défaut: mp4)"
+        "-f", "--format", choices=[*FORMATS, *AUDIO_FORMATS], default="mp4",
+        help="Format de sortie (défaut: mp4)",
     )
     parser.add_argument("-o", "--output", type=Path, default=None, help="Chemin du fichier de sortie")
     args = parser.parse_args()
@@ -110,7 +139,9 @@ def main() -> None:
     if not args.recording.exists():
         sys.exit(f"Erreur : le fichier '{args.recording}' n'existe pas.")
 
-    output_path = args.output or args.recording.with_suffix(FORMATS[args.format]["suffix"])
+    is_audio = args.format in AUDIO_FORMATS
+    all_formats = AUDIO_FORMATS if is_audio else FORMATS
+    output_path = args.output or args.recording.with_suffix(all_formats[args.format]["suffix"])
 
     def print_progress(frac: float) -> None:
         bar_width = 30
@@ -119,7 +150,10 @@ def main() -> None:
         print(f"\r[{bar}] {frac * 100:5.1f}%", end="", flush=True)
 
     try:
-        finalize_recording(args.recording, output_path, args.format, print_progress)
+        if is_audio:
+            finalize_audio_recording(args.recording, output_path, args.format, print_progress)
+        else:
+            finalize_recording(args.recording, output_path, args.format, print_progress)
     except RuntimeError as e:
         print()
         sys.exit(f"Erreur ffmpeg : {e}")
