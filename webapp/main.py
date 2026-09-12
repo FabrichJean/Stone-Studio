@@ -129,10 +129,35 @@ PAGE_TITLES = {
 templates.env.globals["PAGE_TITLES"] = PAGE_TITLES
 
 
+PROJECTS_LOCK = threading.Lock()
+
+
 def load_projects() -> list[dict]:
     if not PROJECTS_FILE.exists():
         return []
     return json.loads(PROJECTS_FILE.read_text())
+
+
+def _generate_thumbnails_bg(project_id: str, file_path: Path, duration: float | None) -> None:
+    """Génère miniature + bande de vignettes en arrière-plan : sur un média long, l'ancien
+    comportement (génération synchrone dans save_project) pouvait bloquer la réponse de
+    plusieurs secondes. Le projet apparaît d'abord sans image, le frontend la récupère dès
+    qu'elle est prête (voir pollFilmstrip dans studio.js)."""
+    thumb_path = THUMBS_DIR / f"{project_id}.jpg"
+    has_thumbnail = generate_thumbnail(file_path, thumb_path, duration)
+    filmstrip_path = THUMBS_DIR / f"{project_id}_filmstrip.jpg"
+    has_filmstrip = generate_filmstrip(file_path, filmstrip_path, duration)
+
+    with PROJECTS_LOCK:
+        projects = load_projects()
+        for p in projects:
+            if p["id"] == project_id:
+                p["has_thumbnail"] = has_thumbnail
+                p["has_filmstrip"] = has_filmstrip
+                break
+        else:
+            return  # projet supprimé entre-temps
+        PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
 
 
 def save_project(
@@ -144,14 +169,6 @@ def save_project(
 
     media_info = probe_media(file_path)
     project_id = Path(output_file).stem
-
-    has_thumbnail = False
-    has_filmstrip = False
-    if media_info["media_type"] == "video":
-        thumb_path = THUMBS_DIR / f"{project_id}.jpg"
-        has_thumbnail = generate_thumbnail(file_path, thumb_path, media_info["duration"])
-        filmstrip_path = THUMBS_DIR / f"{project_id}_filmstrip.jpg"
-        has_filmstrip = generate_filmstrip(file_path, filmstrip_path, media_info["duration"])
 
     record = {
         "id": project_id,
@@ -167,14 +184,21 @@ def save_project(
         "duration": media_info["duration"],
         "width": media_info["width"],
         "height": media_info["height"],
-        "has_thumbnail": has_thumbnail,
-        "has_filmstrip": has_filmstrip,
+        "has_thumbnail": False,
+        "has_filmstrip": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    projects = load_projects()
-    projects.insert(0, record)
-    PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
+    with PROJECTS_LOCK:
+        projects = load_projects()
+        projects.insert(0, record)
+        PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
+
+    if media_info["media_type"] == "video":
+        threading.Thread(
+            target=_generate_thumbnails_bg, args=(project_id, file_path, media_info["duration"]), daemon=True,
+        ).start()
+
     return record
 
 
@@ -421,18 +445,19 @@ def download_project(project_id: str):
 
 @app.delete("/api/projects/{project_id}")
 def delete_project(project_id: str):
-    projects = load_projects()
-    record = next((p for p in projects if p["id"] == project_id), None)
-    if not record:
-        raise HTTPException(404, "Projet introuvable")
+    with PROJECTS_LOCK:
+        projects = load_projects()
+        record = next((p for p in projects if p["id"] == project_id), None)
+        if not record:
+            raise HTTPException(404, "Projet introuvable")
 
-    path = DIRS.get(record.get("output_dir", "output"), OUTPUT_DIR) / record["output_file"]
-    path.unlink(missing_ok=True)
-    (THUMBS_DIR / f"{project_id}.jpg").unlink(missing_ok=True)
-    (THUMBS_DIR / f"{project_id}_filmstrip.jpg").unlink(missing_ok=True)
+        path = DIRS.get(record.get("output_dir", "output"), OUTPUT_DIR) / record["output_file"]
+        path.unlink(missing_ok=True)
+        (THUMBS_DIR / f"{project_id}.jpg").unlink(missing_ok=True)
+        (THUMBS_DIR / f"{project_id}_filmstrip.jpg").unlink(missing_ok=True)
 
-    projects = [p for p in projects if p["id"] != project_id]
-    PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
+        projects = [p for p in projects if p["id"] != project_id]
+        PROJECTS_FILE.write_text(json.dumps(projects, indent=2))
     return {"status": "deleted"}
 
 
