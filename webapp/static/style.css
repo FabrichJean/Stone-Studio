@@ -840,6 +840,43 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   height: 64px;
 }
 
+/* Piste audio parallèle : positionnement libre (par décalage temporel), pas de flex
+   séquentiel — ses clips peuvent se superposer librement entre eux et avec la piste
+   principale, contrairement à `.studio-timeline-track` juste au-dessus. */
+.studio-timeline-track-overlay {
+  display: block;
+  position: relative;
+  height: 48px;
+  border-top: 1px dashed var(--border);
+  background: repeating-linear-gradient(
+    90deg, transparent 0 39px, var(--border) 39px 40px
+  );
+}
+
+.studio-timeline-track-overlay[hidden] { display: none; }
+
+.studio-timeline-track-overlay.dragover { background-color: rgba(217, 119, 87, 0.08); }
+
+.studio-clip-overlay {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 4px;
+  cursor: grab;
+  box-shadow: 0 0 0 1px var(--bg-light);
+}
+
+.studio-clip-overlay:active { cursor: grabbing; }
+.studio-clip-overlay.dragging-clip { opacity: 0.35; cursor: grabbing; }
+
+.studio-timeline-hint {
+  margin: 6px 2px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.studio-timeline-hint[hidden] { display: none; }
+
 .studio-clip {
   position: relative;
   flex-shrink: 0;
