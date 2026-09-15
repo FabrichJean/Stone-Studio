@@ -323,6 +323,7 @@ const FORMS = {
   // piste principale.
   let audioOverlays = []; // { id, name, size, duration, start, localUrl?, pending? }
   let activeIndex = -1;
+  let activeOverlayIndex = -1; // index dans audioOverlays du clip sélectionné, exclusif avec activeIndex
   let selectedType = STUDIO_ACTIONS[0].type;
   let destination = "replace"; // "replace" | "add"
 
@@ -350,7 +351,9 @@ const FORMS = {
   let overlayDragGrabOffsetY = 0;
 
   function toolInputClip() {
-    return stagedSource || timeline[activeIndex];
+    if (stagedSource) return stagedSource;
+    if (activeOverlayIndex >= 0) return audioOverlays[activeOverlayIndex];
+    return timeline[activeIndex];
   }
 
   // Élément média utilisé pendant la CONFIGURATION d'une action (piste de découpage,
@@ -556,6 +559,7 @@ const FORMS = {
     timeline = [];
     audioOverlays = [];
     activeIndex = -1;
+    activeOverlayIndex = -1;
     stagedSource = null;
     playingIndex = -1;
     playheadTime = 0;
@@ -643,6 +647,7 @@ const FORMS = {
   function setActiveClip(index) {
     if (transportPlaying) pauseTransport();
     activeIndex = index;
+    activeOverlayIndex = -1;
     stagedSource = null;
     const clip = timeline[index];
     if (!clip) return;
@@ -662,11 +667,29 @@ const FORMS = {
     selectAction(selectedType);
   }
 
+  // Pendant de setActiveClip pour la piste audio parallèle : un clip d'overlay sélectionné
+  // devient la cible des outils du panneau de droite (découpage, volume, etc.), exactement
+  // comme un clip de la piste principale — seule la source diffère (audioOverlays vs timeline).
+  function setActiveOverlayClip(index) {
+    if (transportPlaying) pauseTransport();
+    activeIndex = -1;
+    activeOverlayIndex = index;
+    stagedSource = null;
+    const clip = audioOverlays[index];
+    if (!clip) return;
+    const src = clip.localUrl || `/api/projects/${clip.id}/download`;
+    audioEl.src = src; audioEl.hidden = false;
+    videoEl.hidden = true; videoEl.src = "";
+    updateActiveClipBanner();
+    renderTimeline();
+    selectAction(selectedType);
+  }
+
   // Remplace la source que l'outil va traiter, SANS toucher au clip actif de la timeline
   // (celui-ci n'est remplacé que si on applique ensuite l'outil avec "Remplacer le contenu
   // actif") — utile pour essayer un outil sur un autre fichier sans reconstruire la timeline.
   function replaceToolInput(file) {
-    if (activeIndex < 0) return;
+    if (activeIndex < 0 && activeOverlayIndex < 0) return;
     const mediaType = file.type.startsWith("audio/") ? "audio" : "video";
     const localUrl = URL.createObjectURL(file);
     stagedSource = { id: null, name: file.name, mediaType, size: file.size, duration: null, hasFilmstrip: false, localUrl };
@@ -1001,13 +1024,19 @@ const FORMS = {
         return;
       }
 
-      block.className = "studio-clip studio-clip-overlay studio-clip-audio";
+      block.className = "studio-clip studio-clip-overlay studio-clip-audio" + (i === activeOverlayIndex ? " active" : "");
       block.style.left = `${Math.round((clip.start || 0) * PX_PER_SEC)}px`;
       block.style.width = `${clipWidth(clip)}px`;
       block.innerHTML = `
         <span class="studio-clip-label">${clip.name}</span>
         <button type="button" class="studio-clip-remove" title="Retirer">✕</button>`;
       block.querySelector(".studio-clip-remove").addEventListener("click", () => removeOverlayClip(i));
+
+      block.addEventListener("click", (e) => {
+        if (e.target.closest(".studio-clip-remove")) return;
+        if (!clip.id) return;
+        setActiveOverlayClip(i);
+      });
 
       block.addEventListener("pointerdown", (e) => {
         if (e.target.closest(".studio-clip-remove") || !clip.id) return;
@@ -1025,6 +1054,8 @@ const FORMS = {
 
   function removeOverlayClip(index) {
     audioOverlays.splice(index, 1);
+    if (activeOverlayIndex === index) activeOverlayIndex = -1;
+    else if (activeOverlayIndex > index) activeOverlayIndex -= 1;
     renderTimeline();
   }
 
@@ -1174,6 +1205,8 @@ const FORMS = {
     // Reposer sur la piste principale reconvertit le clip en clip séquentiel normal.
     if (hovered?.closest("#timelineTrack") && clip) {
       audioOverlays.splice(fromIndex, 1);
+      if (activeOverlayIndex === fromIndex) activeOverlayIndex = -1;
+      else if (activeOverlayIndex > fromIndex) activeOverlayIndex -= 1;
       const target = hovered.closest(".studio-clip");
       let insertAt = timeline.length;
       if (target && target.parentElement === timelineTrack) {
@@ -2298,7 +2331,7 @@ const FORMS = {
   }
 
   function applyAction() {
-    if (activeIndex < 0) return;
+    if (activeIndex < 0 && activeOverlayIndex < 0) return;
     const activeClip = toolInputClip();
     if (!activeClip.id) { statusEl.textContent = "Le fichier est encore en cours d'import…"; statusEl.className = "status"; return; }
 
@@ -2319,6 +2352,35 @@ const FORMS = {
     if (destination === "add") {
       // Non bloquant : un placeholder apparaît immédiatement dans la timeline, le clip
       // réel le remplace une fois le traitement terminé en arrière-plan.
+      if (activeOverlayIndex >= 0) {
+        const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const start = overlayEnd(audioOverlays[activeOverlayIndex]);
+        audioOverlays.push({ tempId, pending: true, mediaType: "audio", duration: activeClip.duration, start });
+        renderTimeline();
+
+        fetch("/api/studio/render", { method: "POST", body: formData })
+          .then((r) => r.json())
+          .then((data) => pollJob(data.job_id, (job) => {
+            const idx = audioOverlays.findIndex((c) => c.tempId === tempId);
+            if (idx === -1) return;
+            audioOverlays[idx] = {
+              id: job.project_id, name: job.output_name, mediaType: job.media_type,
+              size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip, start,
+            };
+            renderTimeline();
+          }, (err) => {
+            const idx = audioOverlays.findIndex((c) => c.tempId === tempId);
+            if (idx !== -1) { audioOverlays.splice(idx, 1); renderTimeline(); }
+            statusEl.textContent = err;
+            statusEl.className = "status error";
+          }))
+          .catch(() => {
+            const idx = audioOverlays.findIndex((c) => c.tempId === tempId);
+            if (idx !== -1) { audioOverlays.splice(idx, 1); renderTimeline(); }
+          });
+        return;
+      }
+
       const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       timeline.push({ tempId, pending: true, mediaType: null, duration: activeClip.duration });
       renderTimeline();
@@ -2358,13 +2420,23 @@ const FORMS = {
       .then((r) => r.json())
       .then((data) => pollJob(data.job_id, (job) => {
         overlay.hidden = true;
-        timeline[activeIndex] = {
-          id: job.project_id, name: job.output_name, mediaType: job.media_type,
-          size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip,
-        };
-        renderTimeline();
-        setActiveClip(activeIndex);
-        pollFilmstrip(timeline[activeIndex]);
+        if (activeOverlayIndex >= 0) {
+          const start = audioOverlays[activeOverlayIndex].start || 0;
+          audioOverlays[activeOverlayIndex] = {
+            id: job.project_id, name: job.output_name, mediaType: job.media_type,
+            size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip, start,
+          };
+          renderTimeline();
+          setActiveOverlayClip(activeOverlayIndex);
+        } else {
+          timeline[activeIndex] = {
+            id: job.project_id, name: job.output_name, mediaType: job.media_type,
+            size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip,
+          };
+          renderTimeline();
+          setActiveClip(activeIndex);
+          pollFilmstrip(timeline[activeIndex]);
+        }
       }, (err) => {
         overlay.hidden = true;
         statusEl.textContent = err;
