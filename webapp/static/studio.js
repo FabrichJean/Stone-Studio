@@ -481,41 +481,37 @@ const FORMS = {
     return media;
   }
 
-  function detachTransportTracking() {
-    [videoEl, audioEl].forEach((m) => {
-      if (transportEndedHandler) m.removeEventListener("ended", transportEndedHandler);
-    });
-    if (transportRafId !== null) { cancelAnimationFrame(transportRafId); transportRafId = null; }
-    if (tailRafId !== null) { cancelAnimationFrame(tailRafId); tailRafId = null; }
+  // Charge (et, si `play` est vrai, démarre) le clip principal actif à `playheadTime`, en ne
+  // touchant à sa source que si on change effectivement de clip (voir loadClipForPlayback).
+  function syncMainPlayback(play) {
+    const idx = clipIndexAtTime(playheadTime);
+    const media = loadClipForPlayback(idx);
+    if (!media) return;
+    const local = playheadTime - clipStartTime(idx);
+    const applySeek = () => {
+      media.currentTime = local;
+      if (play) media.play().catch(() => {});
+    };
+    if (media.readyState >= 1) applySeek(); else media.addEventListener("loadedmetadata", applySeek, { once: true });
   }
 
-  // Le curseur avance à chaque frame (plutôt qu'à chaque événement "timeupdate", trop peu
-  // fréquent — quelques fois par seconde) pour un mouvement fluide pendant la lecture.
-  function tickPlayheadFrame(media) {
+  // Moteur de lecture unique, piloté par le temps réel plutôt que par les événements d'un média
+  // particulier : la piste principale peut désormais contenir des trous (position libre), donc
+  // il n'y a plus toujours un clip "en cours" à suivre — on avance `playheadTime` nous-mêmes à
+  // chaque frame et on (re)charge le clip principal actif seulement quand il change.
+  function transportStep(lastPerf) {
     if (!transportPlaying) return;
-    playheadTime = clipStartTime(playingIndex) + media.currentTime;
+    const now = performance.now();
+    const total = timelineEndTime();
+    playheadTime = Math.min(total, playheadTime + (now - lastPerf) / 1000);
+
+    const idx = clipIndexAtTime(playheadTime);
+    if (idx !== playingIndex) syncMainPlayback(true);
+
     updatePlayheadUI();
     syncOverlayPlayback(true);
-    transportRafId = requestAnimationFrame(() => tickPlayheadFrame(media));
-  }
 
-  function attachTransportTracking(media) {
-    detachTransportTracking();
-    if (!media) return;
-    transportEndedHandler = () => advanceTransport();
-    media.addEventListener("ended", transportEndedHandler);
-    transportRafId = requestAnimationFrame(() => tickPlayheadFrame(media));
-  }
-
-  // Une fois la piste principale épuisée, si la piste audio parallèle dépasse encore sa durée,
-  // on continue d'avancer le curseur "à la main" (plus aucun média principal à suivre) jusqu'à
-  // la fin réelle de la timeline, tout en laissant les overlays jouer.
-  function startTailPlayback(total) {
-    detachTransportTracking();
-    playingIndex = timeline.length;
-    videoEl.pause();
-    audioEl.pause();
-    const tailStartPerf = performance.now();
+    if (playheadTime >= total - 0.01) {
     const tailStartTime = playheadTime;
     const step = () => {
       if (!transportPlaying) return;
