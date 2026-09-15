@@ -760,9 +760,13 @@ const FORMS = {
     stagedSource = null;
     const clip = audioOverlays[index];
     if (!clip) return;
-    const src = clip.localUrl || `/api/projects/${clip.id}/download`;
-    audioEl.src = src; audioEl.hidden = false;
-    videoEl.hidden = true; videoEl.src = "";
+    // Ne jamais écrire directement dans videoEl/audioEl ici : ce sont les éléments partagés
+    // qui pilotent le transport global (lecture séquentielle de toute la timeline), et les
+    // réaffecter à la main désynchronise `playingIndex` — la lecture globale se retrouvait
+    // ensuite bloquée sur une source vidée. `seekTo` est le seul point qui les manipule,
+    // en se basant sur la position du clip d'overlay dans la timeline plutôt que sur son
+    // propre contenu (prévisualisé séparément dans le panneau via updateActiveClipBanner).
+    seekTo(clip.start || 0);
     updateActiveClipBanner();
     renderTimeline();
     selectAction(selectedType);
