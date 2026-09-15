@@ -512,52 +512,18 @@ const FORMS = {
     syncOverlayPlayback(true);
 
     if (playheadTime >= total - 0.01) {
-    const tailStartTime = playheadTime;
-    const step = () => {
-      if (!transportPlaying) return;
-      const elapsed = (performance.now() - tailStartPerf) / 1000;
-      playheadTime = Math.min(total, tailStartTime + elapsed);
-      updatePlayheadUI();
-      syncOverlayPlayback(true);
-      if (playheadTime >= total - 0.01) {
-        pauseTransport();
-        seekTo(total);
-        return;
-      }
-      tailRafId = requestAnimationFrame(step);
-    };
-    tailRafId = requestAnimationFrame(step);
-  }
-
-  function advanceTransport() {
-    if (playingIndex + 1 >= timeline.length) {
-      const total = timelineEndTime();
-      if (playheadTime < total - 0.02) { startTailPlayback(total); return; }
       pauseTransport();
       seekTo(total);
       return;
     }
-    const media = loadClipForPlayback(playingIndex + 1);
-    if (!media) { pauseTransport(); return; }
-    const start = () => { media.currentTime = 0; media.play(); };
-    if (media.readyState >= 1) start(); else media.addEventListener("loadedmetadata", start, { once: true });
-    attachTransportTracking(media);
+    transportRafId = requestAnimationFrame(() => transportStep(now));
   }
 
   function seekTo(time) {
     if (timeline.length === 0 && audioOverlays.length === 0) return;
     const total = timelineEndTime();
-    time = Math.max(0, Math.min(time, total));
-    if (timeline.length > 0) {
-      const idx = clipIndexAtTime(time);
-      const media = loadClipForPlayback(idx);
-      if (media) {
-        const local = time - clipStartTime(idx);
-        const applySeek = () => { media.currentTime = local; };
-        if (media.readyState >= 1) applySeek(); else media.addEventListener("loadedmetadata", applySeek, { once: true });
-      }
-    }
-    playheadTime = time;
+    playheadTime = Math.max(0, Math.min(time, total));
+    syncMainPlayback(false);
     updatePlayheadUI();
     syncOverlayPlayback(false);
   }
@@ -569,12 +535,9 @@ const FORMS = {
     if (playheadTime >= total - 0.05) seekTo(0);
     transportPlaying = true;
     updateTransportPlayIcon();
-    if (timeline.length === 0) {
-      // Piste principale vide : seule la piste audio parallèle avance, pilotée par le temps.
-      startTailPlayback(total);
-      return;
-    }
-    const idx = clipIndexAtTime(playheadTime);
+    syncMainPlayback(true);
+    syncOverlayPlayback(true);
+    transportRafId = requestAnimationFrame(() => transportStep(performance.now()));
     const media = loadClipForPlayback(idx);
     if (!media) { transportPlaying = false; updateTransportPlayIcon(); return; }
     const local = playheadTime - clipStartTime(idx);
