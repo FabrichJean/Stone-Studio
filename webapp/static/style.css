@@ -835,8 +835,11 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   white-space: nowrap;
 }
 
+/* Piste principale : positionnement libre (par décalage temporel), comme la piste audio
+   parallèle juste en dessous — les clips peuvent laisser des trous entre eux (comblés au noir/
+   silence à l'export), mais restent visuellement d'un seul tenant contrairement aux overlays. */
 .studio-timeline-track {
-  display: flex;
+  position: relative;
   height: 64px;
 }
 
@@ -878,9 +881,9 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 .studio-timeline-hint[hidden] { display: none; }
 
 .studio-clip {
-  position: relative;
-  flex-shrink: 0;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  bottom: 0;
   border-right: 2px solid var(--bg-light);
   background-color: var(--sidebar-active-bg);
   background-repeat: repeat-x;
@@ -936,10 +939,6 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   text-overflow: ellipsis;
 }
 
-.studio-clip.drop-before::before,
-.studio-clip.drop-after::after {
-  content: "";
-  position: absolute;
   top: 0;
   bottom: 0;
   width: 3px;
