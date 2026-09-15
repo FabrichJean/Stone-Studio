@@ -4,6 +4,7 @@ l'entrée de la suivante, en réutilisant directement les fonctions ffmpeg des o
 
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from typing import Callable
 
@@ -239,12 +240,52 @@ def _probe_duration(path: Path) -> float:
         return 1.0
 
 
-def concat_clips(clip_paths: list[Path], workdir: Path, on_progress: ProgressCallback | None = None) -> Path:
-    """Assemble plusieurs clips bout à bout (piste de montage) en un seul fichier final.
+def _make_gap_clip(duration: float, width: int, height: int, want_video: bool, workdir: Path) -> Path:
+    """Segment noir et silencieux (ou juste silencieux si `want_video` est faux) de la durée
+    donnée, utilisé pour combler un espace vide laissé entre deux clips positionnés librement
+    sur une piste — la piste principale accepte désormais des trous, comme la piste audio
+    parallèle accepte déjà les chevauchements."""
+    suffix = ".mp4" if want_video else ".m4a"
+    out_path = workdir / f"gap_{uuid.uuid4().hex}{suffix}"
+    cmd = ["ffmpeg", "-y", "-f", "lavfi", "-t", str(duration)]
+    if want_video:
+        cmd += ["-i", f"color=c=black:s={width}x{height}:r=25"]
+        cmd += ["-f", "lavfi", "-t", str(duration), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+        cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", "-shortest", str(out_path)]
+    else:
+        cmd += ["-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+        cmd += ["-c:a", "aac", str(out_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ChainError(f"Impossible de générer un espace vide dans la timeline : {result.stderr.strip()[-400:]}")
+    return out_path
+
+
+def concat_clips(clips: list[dict], workdir: Path, on_progress: ProgressCallback | None = None) -> Path:
+    """Assemble les clips de la piste de montage en un seul fichier final, dans l'ordre de leur
+    position libre (`start`) plutôt que de leur ordre d'ajout — tout espace vide entre deux
+    clips (ou avant le premier) est comblé par un segment noir/silencieux synthétique.
     Les clips vidéo sont mis à l'échelle sur les dimensions du premier avant d'être concaténés
-    (le filtre concat exige des flux de même résolution)."""
-    if not clip_paths:
+    (le filtre concat exige des flux de même résolution).
+
+    `clips` : [{"path": Path, "start": float}, ...]."""
+    if not clips:
         raise ChainError("La timeline est vide.")
+
+    has_video = any(c["path"].suffix.lower() in VIDEO_EXTS for c in clips)
+    ordered = sorted(clips, key=lambda c: c["start"])
+    video_clip = next((c for c in ordered if c["path"].suffix.lower() in VIDEO_EXTS), None)
+    target_w, target_h = _probe_dimensions(video_clip["path"]) if video_clip else (1280, 720)
+
+    clip_paths: list[Path] = []
+    cursor = 0.0
+    for c in ordered:
+        gap = c["start"] - cursor
+        if gap > 0.05:
+            clip_paths.append(_make_gap_clip(gap, target_w, target_h, has_video, workdir))
+        clip_paths.append(c["path"])
+        cursor = max(cursor, c["start"] + _probe_duration(c["path"]))
+
     if len(clip_paths) == 1:
         if on_progress:
             on_progress(1.0)
@@ -252,12 +293,8 @@ def concat_clips(clip_paths: list[Path], workdir: Path, on_progress: ProgressCal
 
     exts = {p.suffix.lower() for p in clip_paths}
     all_audio = exts <= AUDIO_EXTS
-    all_video = exts <= VIDEO_EXTS
-    if not all_audio and not all_video:
-        raise ChainError(
-            "Impossible d'assembler la timeline : elle mélange des clips vidéo et audio. "
-            "Gardez des clips du même type pour l'export."
-        )
+    # `has_video` (calculé plus haut sur `clips`, avant l'ajout des combleurs de trous) reste
+    # valable ici : un combleur ne change jamais la présence ou l'absence de vidéo dans la piste.
 
     n = len(clip_paths)
     cmd = ["ffmpeg", "-y"]
@@ -265,11 +302,13 @@ def concat_clips(clip_paths: list[Path], workdir: Path, on_progress: ProgressCal
         cmd += ["-i", str(p)]
 
     filter_parts = []
-    if all_video:
-        target_w, target_h = _probe_dimensions(clip_paths[0])
+    if has_video and not all_audio:
+        video_path = next(p for p in clip_paths if p.suffix.lower() in VIDEO_EXTS)
+        target_w, target_h = _probe_dimensions(video_path)
         # Un clip vidéo peut ne pas avoir de piste audio (ex : enregistrement d'écran sans
-        # micro) : le filtre concat exige pourtant le même nombre de flux sur chaque segment,
-        # donc on lui fournit une piste silencieuse synthétique de la bonne durée à la place.
+        # micro), et un clip audio pur n'a pas d'image : le filtre concat exige pourtant le même
+        # nombre de flux sur chaque segment, donc on fournit dans chaque cas la piste manquante
+        # (silence, ou fond noir de la bonne durée) sous forme de source synthétique.
         next_input_index = n
         for i, p in enumerate(clip_paths):
             filter_parts.append(f"[{i}:v]scale={target_w}:{target_h},setsar=1[v{i}]")
