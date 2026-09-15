@@ -377,30 +377,41 @@ const FORMS = {
      de l'action "active" (celle éditée dans le panneau de droite) : jouer/chercher dans la
      timeline ne modifie ni la sélection d'édition en cours ni l'état des panneaux. */
 
-  let playingIndex = -1; // index du clip actuellement chargé dans l'aperçu pour la lecture
+  let playingIndex = -1; // index du clip actuellement chargé dans l'aperçu pour la lecture (-1 = aucun/trou)
   let playheadTime = 0; // position globale (secondes) sur l'ensemble de la timeline
   let transportPlaying = false;
-  let transportEndedHandler = null;
   let transportRafId = null;
-  let tailRafId = null; // avance manuelle du curseur une fois la piste principale épuisée
   let scrubbing = false;
   const overlayEls = new Map(); // clip (piste audio parallèle) -> <audio> dédié à sa lecture
 
+  // La piste principale est en position libre (comme la piste audio parallèle) : chaque clip a
+  // son propre `start`, et peut laisser un trou avant le suivant (comblé au noir/silence à
+  // l'export — voir concat_clips côté serveur).
   function clipStartTime(index) {
-    let t = 0;
-    for (let i = 0; i < index; i++) t += timeline[i].duration || 3;
-    return t;
+    const c = timeline[index];
+    return c ? (c.start || 0) : 0;
   }
 
   function totalTimelineDuration() {
-    return timeline.reduce((sum, c) => sum + (c.duration || 3), 0);
+    return timeline.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
+  }
+
+  // Trouve l'index du clip principal actif à l'instant `t` (celui dont [start, start+duration)
+  // le couvre), ou -1 si `t` tombe dans un trou entre deux clips (ou après le dernier).
+  function clipIndexAtTime(t) {
+    for (let i = 0; i < timeline.length; i++) {
+      const c = timeline[i];
+      const s = c.start || 0;
+      if (t >= s && t < s + (c.duration || 3)) return i;
+    }
+    return -1;
   }
 
   // Durée réelle de la timeline pour la lecture/le curseur : la piste principale, mais aussi
   // les clips de la piste audio parallèle qui peuvent dépasser sa fin (même logique que le
   // mixage d'export, voir concat_clips_with_overlays côté serveur).
   function timelineEndTime() {
-    const overlayDuration = audioOverlays.reduce((max, c) => Math.max(max, overlayEnd(c)), 0);
+    const overlayDuration = audioOverlays.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
     return Math.max(totalTimelineDuration(), overlayDuration);
   }
 
@@ -433,16 +444,6 @@ const FORMS = {
     });
   }
 
-  function clipIndexAtTime(t) {
-    let acc = 0;
-    for (let i = 0; i < timeline.length; i++) {
-      const d = timeline[i].duration || 3;
-      if (t < acc + d || i === timeline.length - 1) return i;
-      acc += d;
-    }
-    return 0;
-  }
-
   function updatePlayheadUI() {
     const total = timelineEndTime();
     timelinePlayhead.hidden = timeline.length === 0 && audioOverlays.length === 0;
@@ -456,10 +457,18 @@ const FORMS = {
   }
 
   // Charge le clip `idx` dans l'aperçu pour la lecture (bascule vidéo/audio si besoin),
-  // sans toucher à `activeIndex` ni au panneau d'édition.
+  // sans toucher à `activeIndex` ni au panneau d'édition. `idx` peut valoir -1 (trou entre deux
+  // clips, ou piste principale vide) : plus aucun média n'est alors visible.
   function loadClipForPlayback(idx) {
-    const clip = timeline[idx];
-    if (!clip || !clip.id) return null;
+    const clip = idx >= 0 ? timeline[idx] : null;
+    if (!clip || !clip.id) {
+      if (playingIndex !== idx) {
+        videoEl.pause(); videoEl.hidden = true;
+        audioEl.pause(); audioEl.hidden = true;
+        playingIndex = idx;
+      }
+      return null;
+    }
     const media = clip.mediaType === "audio" ? audioEl : videoEl;
     const other = clip.mediaType === "audio" ? videoEl : audioEl;
     if (playingIndex !== idx) {
