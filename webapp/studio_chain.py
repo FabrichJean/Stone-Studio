@@ -329,7 +329,11 @@ def concat_clips_with_overlays(
                 on_progress(frac * 0.6)
 
         main_path = concat_clips(clip_paths, workdir, main_progress)
-        total_duration = _probe_duration(main_path)
+        main_duration = _probe_duration(main_path)
+        overlays_end = max(
+            (o["start"] + _probe_duration(o["path"]) for o in audio_overlays), default=0.0
+        )
+        total_duration = max(main_duration, overlays_end)
         has_video = main_path.suffix.lower() in VIDEO_EXTS
     else:
         main_path = None
