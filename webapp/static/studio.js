@@ -382,7 +382,9 @@ const FORMS = {
   let transportPlaying = false;
   let transportEndedHandler = null;
   let transportRafId = null;
+  let tailRafId = null; // avance manuelle du curseur une fois la piste principale épuisée
   let scrubbing = false;
+  const overlayEls = new Map(); // clip (piste audio parallèle) -> <audio> dédié à sa lecture
 
   function clipStartTime(index) {
     let t = 0;
@@ -392,6 +394,43 @@ const FORMS = {
 
   function totalTimelineDuration() {
     return timeline.reduce((sum, c) => sum + (c.duration || 3), 0);
+  }
+
+  // Durée réelle de la timeline pour la lecture/le curseur : la piste principale, mais aussi
+  // les clips de la piste audio parallèle qui peuvent dépasser sa fin (même logique que le
+  // mixage d'export, voir concat_clips_with_overlays côté serveur).
+  function timelineEndTime() {
+    const overlayDuration = audioOverlays.reduce((max, c) => Math.max(max, overlayEnd(c)), 0);
+    return Math.max(totalTimelineDuration(), overlayDuration);
+  }
+
+  // Aligne la lecture de la piste audio parallèle sur `playheadTime` : chaque clip dont la
+  // fenêtre [start, start+duration) couvre l'instant courant est joué (ou juste repositionné
+  // si `playing` est faux, ex. pendant un scrub), les autres sont mis en pause. Un <audio>
+  // dédié par clip permet à plusieurs overlays superposés de jouer simultanément.
+  function syncOverlayPlayback(playing) {
+    const present = new Set(audioOverlays);
+    overlayEls.forEach((el, clip) => {
+      if (!present.has(clip)) { el.pause(); overlayEls.delete(clip); }
+    });
+    audioOverlays.forEach((clip) => {
+      if (!clip.id || clip.pending) return;
+      const localT = playheadTime - (clip.start || 0);
+      const dur = clip.duration || 0;
+      let el = overlayEls.get(clip);
+      if (localT < 0 || localT >= dur) { if (el) el.pause(); return; }
+      if (!el) {
+        el = new Audio(clip.localUrl || `/api/projects/${clip.id}/download`);
+        overlayEls.set(clip, el);
+      }
+      if (playing) {
+        if (el.paused) { el.currentTime = localT; el.play().catch(() => {}); }
+        else if (Math.abs(el.currentTime - localT) > 0.35) { el.currentTime = localT; }
+      } else {
+        el.pause();
+        if (Math.abs(el.currentTime - localT) > 0.05) el.currentTime = localT;
+      }
+    });
   }
 
   function clipIndexAtTime(t) {
@@ -405,8 +444,8 @@ const FORMS = {
   }
 
   function updatePlayheadUI() {
-    const total = totalTimelineDuration();
-    timelinePlayhead.hidden = timeline.length === 0;
+    const total = timelineEndTime();
+    timelinePlayhead.hidden = timeline.length === 0 && audioOverlays.length === 0;
     timelinePlayhead.style.left = `${playheadTime * PX_PER_SEC}px`;
     transportTimeEl.textContent = `${secondsToTimestamp(playheadTime)} / ${secondsToTimestamp(total)}`;
   }
@@ -438,6 +477,7 @@ const FORMS = {
       if (transportEndedHandler) m.removeEventListener("ended", transportEndedHandler);
     });
     if (transportRafId !== null) { cancelAnimationFrame(transportRafId); transportRafId = null; }
+    if (tailRafId !== null) { cancelAnimationFrame(tailRafId); tailRafId = null; }
   }
 
   // Le curseur avance à chaque frame (plutôt qu'à chaque événement "timeupdate", trop peu
@@ -446,6 +486,7 @@ const FORMS = {
     if (!transportPlaying) return;
     playheadTime = clipStartTime(playingIndex) + media.currentTime;
     updatePlayheadUI();
+    syncOverlayPlayback(true);
     transportRafId = requestAnimationFrame(() => tickPlayheadFrame(media));
   }
 
@@ -457,10 +498,38 @@ const FORMS = {
     transportRafId = requestAnimationFrame(() => tickPlayheadFrame(media));
   }
 
+  // Une fois la piste principale épuisée, si la piste audio parallèle dépasse encore sa durée,
+  // on continue d'avancer le curseur "à la main" (plus aucun média principal à suivre) jusqu'à
+  // la fin réelle de la timeline, tout en laissant les overlays jouer.
+  function startTailPlayback(total) {
+    detachTransportTracking();
+    playingIndex = timeline.length;
+    videoEl.pause();
+    audioEl.pause();
+    const tailStartPerf = performance.now();
+    const tailStartTime = playheadTime;
+    const step = () => {
+      if (!transportPlaying) return;
+      const elapsed = (performance.now() - tailStartPerf) / 1000;
+      playheadTime = Math.min(total, tailStartTime + elapsed);
+      updatePlayheadUI();
+      syncOverlayPlayback(true);
+      if (playheadTime >= total - 0.01) {
+        pauseTransport();
+        seekTo(total);
+        return;
+      }
+      tailRafId = requestAnimationFrame(step);
+    };
+    tailRafId = requestAnimationFrame(step);
+  }
+
   function advanceTransport() {
     if (playingIndex + 1 >= timeline.length) {
+      const total = timelineEndTime();
+      if (playheadTime < total - 0.02) { startTailPlayback(total); return; }
       pauseTransport();
-      seekTo(totalTimelineDuration());
+      seekTo(total);
       return;
     }
     const media = loadClipForPlayback(playingIndex + 1);
@@ -471,29 +540,40 @@ const FORMS = {
   }
 
   function seekTo(time) {
-    if (timeline.length === 0) return;
-    const total = totalTimelineDuration();
+    if (timeline.length === 0 && audioOverlays.length === 0) return;
+    const total = timelineEndTime();
     time = Math.max(0, Math.min(time, total));
-    const idx = clipIndexAtTime(time);
-    const media = loadClipForPlayback(idx);
-    if (!media) return;
-    const local = time - clipStartTime(idx);
-    const applySeek = () => { media.currentTime = local; };
-    if (media.readyState >= 1) applySeek(); else media.addEventListener("loadedmetadata", applySeek, { once: true });
+    if (timeline.length > 0) {
+      const idx = clipIndexAtTime(time);
+      const media = loadClipForPlayback(idx);
+      if (media) {
+        const local = time - clipStartTime(idx);
+        const applySeek = () => { media.currentTime = local; };
+        if (media.readyState >= 1) applySeek(); else media.addEventListener("loadedmetadata", applySeek, { once: true });
+      }
+    }
     playheadTime = time;
     updatePlayheadUI();
+    syncOverlayPlayback(false);
   }
 
   function playTransport() {
-    if (timeline.length === 0 || timeline.some((c) => !c.id)) return;
-    if (playheadTime >= totalTimelineDuration() - 0.05) seekTo(0);
+    if (timeline.length === 0 && audioOverlays.length === 0) return;
+    if (timeline.some((c) => !c.id) || audioOverlays.some((c) => !c.id)) return;
+    const total = timelineEndTime();
+    if (playheadTime >= total - 0.05) seekTo(0);
     transportPlaying = true;
     updateTransportPlayIcon();
+    if (timeline.length === 0) {
+      // Piste principale vide : seule la piste audio parallèle avance, pilotée par le temps.
+      startTailPlayback(total);
+      return;
+    }
     const idx = clipIndexAtTime(playheadTime);
     const media = loadClipForPlayback(idx);
     if (!media) { transportPlaying = false; updateTransportPlayIcon(); return; }
     const local = playheadTime - clipStartTime(idx);
-    const start = () => { media.currentTime = local; media.play(); };
+    const start = () => { media.currentTime = local; media.play(); syncOverlayPlayback(true); };
     if (media.readyState >= 1) start(); else media.addEventListener("loadedmetadata", start, { once: true });
     attachTransportTracking(media);
   }
@@ -502,11 +582,12 @@ const FORMS = {
     transportPlaying = false;
     updateTransportPlayIcon();
     detachTransportTracking();
-    if (playingIndex >= 0) {
+    if (playingIndex >= 0 && playingIndex < timeline.length) {
       const clip = timeline[playingIndex];
       const media = clip && clip.mediaType === "audio" ? audioEl : videoEl;
       media.pause();
     }
+    overlayEls.forEach((el) => el.pause());
   }
 
   function toggleTransportPlay() {
@@ -515,7 +596,7 @@ const FORMS = {
 
   transportPlayBtn.addEventListener("click", toggleTransportPlay);
   transportStartBtn.addEventListener("click", () => { pauseTransport(); seekTo(0); });
-  transportEndBtn.addEventListener("click", () => { pauseTransport(); seekTo(totalTimelineDuration()); });
+  transportEndBtn.addEventListener("click", () => { pauseTransport(); seekTo(timelineEndTime()); });
 
   function scrubToClientX(clientX) {
     const rect = timelineTrack.getBoundingClientRect();
@@ -527,7 +608,7 @@ const FORMS = {
     // Un clic/glisser qui démarre sur un clip est géré par son propre pointerdown (sélection
     // ou réordonnancement) — laisser le scrub de la tête de lecture s'en emparer aussi créait
     // un conflit où le scrub gagnait systématiquement.
-    if (timeline.length === 0 || e.target.closest(".studio-clip")) return;
+    if ((timeline.length === 0 && audioOverlays.length === 0) || e.target.closest(".studio-clip")) return;
     scrubbing = true;
     if (transportPlaying) pauseTransport();
     scrubToClientX(e.clientX);
@@ -556,6 +637,8 @@ const FORMS = {
 
   function resetStudio() {
     if (transportPlaying) pauseTransport();
+    overlayEls.forEach((el) => el.pause());
+    overlayEls.clear();
     timeline = [];
     audioOverlays = [];
     activeIndex = -1;
