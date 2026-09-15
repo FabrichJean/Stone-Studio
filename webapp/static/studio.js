@@ -1237,20 +1237,15 @@ const FORMS = {
 
     const hovered = document.elementFromPoint(e.clientX, e.clientY);
 
-    // Reposer sur la piste principale reconvertit le clip en clip séquentiel normal.
+    // Reposer sur la piste principale reconvertit le clip en clip de piste principale, à la
+    // position (libre) du dépôt — les deux pistes partagent maintenant le même positionnement.
     if (hovered?.closest("#timelineTrack") && clip) {
       audioOverlays.splice(fromIndex, 1);
       if (activeOverlayIndex === fromIndex) activeOverlayIndex = -1;
       else if (activeOverlayIndex > fromIndex) activeOverlayIndex -= 1;
-      const target = hovered.closest(".studio-clip");
-      let insertAt = timeline.length;
-      if (target && target.parentElement === timelineTrack) {
-        const idx = Array.from(timelineTrack.children).indexOf(target);
-        const rect = target.getBoundingClientRect();
-        insertAt = idx + (e.clientX - rect.left < rect.width / 2 ? 0 : 1);
-      }
-      const { start, ...clipWithoutStart } = clip;
-      timeline.splice(insertAt, 0, clipWithoutStart);
+      const rect = timelineTrack.getBoundingClientRect();
+      const start = Math.max(0, (e.clientX - overlayDragGrabOffsetX - rect.left) / PX_PER_SEC);
+      timeline.push({ ...clip, start });
       renderTimeline();
       return;
     }
@@ -1266,9 +1261,32 @@ const FORMS = {
 
   function removeClip(index) {
     timeline.splice(index, 1);
-    if (timeline.length === 0) { resetStudio(); return; }
-    setActiveClip(Math.min(activeIndex, timeline.length - 1));
+    if (timeline.length === 0 && audioOverlays.length === 0) { resetStudio(); return; }
+    if (activeIndex === index) activeIndex = -1;
+    else if (activeIndex > index) activeIndex -= 1;
+    if (activeIndex >= 0) setActiveClip(activeIndex);
+    else { updateActiveClipBanner(); renderTimeline(); }
   }
+
+  // Déplace le clip sélectionné (piste principale ou parallèle) horizontalement au clavier —
+  // pas fin (0.1s) par défaut, pas large (1s) avec Maj, sans jamais repasser avant 0.
+  const NUDGE_STEP = 0.1;
+  const NUDGE_STEP_FAST = 1;
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const target = e.target;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+
+    const clip = activeOverlayIndex >= 0 ? audioOverlays[activeOverlayIndex]
+      : activeIndex >= 0 ? timeline[activeIndex]
+      : null;
+    if (!clip) return;
+
+    e.preventDefault();
+    const step = e.shiftKey ? NUDGE_STEP_FAST : NUDGE_STEP;
+    clip.start = Math.max(0, (clip.start || 0) + (e.key === "ArrowRight" ? step : -step));
+    renderTimeline();
+  });
 
   /* ===================== Piste de découpage partagée (Découpage / Vitesse / Transformation) =====================
      Un même moteur de piste (poignées de début/fin, tête de lecture, liste de morceaux) est
@@ -2389,7 +2407,7 @@ const FORMS = {
       // réel le remplace une fois le traitement terminé en arrière-plan.
       if (activeOverlayIndex >= 0) {
         const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const start = overlayEnd(audioOverlays[activeOverlayIndex]);
+        const start = clipEnd(audioOverlays[activeOverlayIndex]);
         audioOverlays.push({ tempId, pending: true, mediaType: "audio", duration: activeClip.duration, start });
         renderTimeline();
 
@@ -2416,8 +2434,9 @@ const FORMS = {
         return;
       }
 
+      const start = timeline.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
       const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      timeline.push({ tempId, pending: true, mediaType: null, duration: activeClip.duration });
+      timeline.push({ tempId, pending: true, mediaType: null, duration: activeClip.duration, start });
       renderTimeline();
 
       fetch("/api/studio/render", { method: "POST", body: formData })
@@ -2427,7 +2446,7 @@ const FORMS = {
           if (idx === -1) return;
           timeline[idx] = {
             id: job.project_id, name: job.output_name, mediaType: job.media_type,
-            size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip,
+            size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip, start,
           };
           stagedSource = null;
           updateActiveClipBanner();
@@ -2464,9 +2483,10 @@ const FORMS = {
           renderTimeline();
           setActiveOverlayClip(activeOverlayIndex);
         } else {
+          const start = timeline[activeIndex].start || 0;
           timeline[activeIndex] = {
             id: job.project_id, name: job.output_name, mediaType: job.media_type,
-            size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip,
+            size: job.output_size, duration: job.duration, hasFilmstrip: job.has_filmstrip, start,
           };
           renderTimeline();
           setActiveClip(activeIndex);
@@ -2492,7 +2512,7 @@ const FORMS = {
     exportProgressLabel.textContent = "Assemblage de la timeline…";
 
     const formData = new FormData();
-    formData.append("clip_ids", JSON.stringify(timeline.map((c) => c.id)));
+    formData.append("clips", JSON.stringify(timeline.map((c) => ({ id: c.id, start: c.start || 0 }))));
     formData.append(
       "audio_overlays",
       JSON.stringify(audioOverlays.map((c) => ({ id: c.id, start: c.start || 0 })))
