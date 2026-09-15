@@ -990,14 +990,10 @@ const FORMS = {
   }
 
   function renderTimeline() {
-    const mainDuration = timeline.reduce((sum, c) => sum + (c.duration || 3), 0);
-    const overlayDuration = audioOverlays.reduce((max, c) => Math.max(max, overlayEnd(c)), 0);
+    const mainDuration = timeline.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
+    const overlayDuration = audioOverlays.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
     const totalDuration = Math.max(mainDuration, overlayDuration);
-    const totalWidth = Math.max(
-      timeline.reduce((sum, c) => sum + clipWidth(c), 0),
-      Math.round(overlayDuration * PX_PER_SEC),
-      1
-    );
+    const totalWidth = Math.max(Math.round(totalDuration * PX_PER_SEC), 1);
 
     timelineRuler.style.width = `${totalWidth}px`;
     timelineRuler.innerHTML = "";
@@ -1014,6 +1010,7 @@ const FORMS = {
     timelineTrack.innerHTML = "";
     timeline.forEach((clip, i) => {
       const block = document.createElement("div");
+      block.style.left = `${Math.round((clip.start || 0) * PX_PER_SEC)}px`;
       if (clip.pending) {
         block.className = "studio-clip studio-clip-pending";
         block.style.width = `${clipWidth(clip)}px`;
@@ -1040,11 +1037,10 @@ const FORMS = {
       });
       block.querySelector(".studio-clip-remove").addEventListener("click", () => removeClip(i));
 
-      // Réordonnancement au pointeur plutôt qu'au drag-and-drop natif HTML5 : ce dernier
-      // exige que le navigateur considère explicitement le drop comme "accepté" sur chaque
-      // cible, et rejoue sinon une animation de "retour à la case départ" peu fiable d'un
-      // navigateur à l'autre. Le suivi manuel du pointeur est le même mécanisme déjà utilisé
-      // pour les poignées de découpage et le scrub de la timeline — cohérent et robuste.
+      // Repositionnement libre au pointeur (même mécanisme que la piste audio parallèle) plutôt
+      // qu'au drag-and-drop natif HTML5 : ce dernier exige que le navigateur considère
+      // explicitement le drop comme "accepté" sur chaque cible, et rejoue sinon une animation de
+      // "retour à la case départ" peu fiable d'un navigateur à l'autre.
       block.addEventListener("pointerdown", (e) => {
         if (e.target.closest(".studio-clip-remove") || !clip.id) return;
         dragSourceIndex = i;
@@ -1117,18 +1113,6 @@ const FORMS = {
     renderTimeline();
   }
 
-  function reorderClip(fromIndex, toIndex) {
-    if (fromIndex === toIndex || fromIndex + 1 === toIndex) return;
-    const activeClipRef = timeline[activeIndex];
-    const playingClipRef = timeline[playingIndex];
-    const [moved] = timeline.splice(fromIndex, 1);
-    const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex;
-    timeline.splice(insertAt, 0, moved);
-    if (activeClipRef) activeIndex = timeline.indexOf(activeClipRef);
-    if (playingClipRef) playingIndex = timeline.indexOf(playingClipRef);
-    renderTimeline();
-  }
-
   const DRAG_REORDER_THRESHOLD = 6;
 
   function positionDragGhost(e) {
@@ -1164,20 +1148,12 @@ const FORMS = {
     }
     positionDragGhost(e);
 
-    timelineTrack.querySelectorAll(".drop-before, .drop-after").forEach((b) => b.classList.remove("drop-before", "drop-after"));
     // Le clone a pointer-events:none, donc elementFromPoint "voit à travers" jusqu'à la
     // vraie cible sous le curseur.
     const hovered = document.elementFromPoint(e.clientX, e.clientY);
-    const target = hovered?.closest(".studio-clip");
-    if (target && target.parentElement === timelineTrack) {
-      const rect = target.getBoundingClientRect();
-      const before = e.clientX - rect.left < rect.width / 2;
-      target.classList.toggle("drop-before", before);
-      target.classList.toggle("drop-after", !before);
-    }
 
     // Glisser un clip audio vers le bas, sur la piste parallèle, permet de le superposer au
-    // reste de la timeline plutôt que de l'insérer dans l'ordre séquentiel.
+    // reste de la timeline plutôt que de rester sur la piste principale.
     const draggedClip = timeline[dragSourceIndex];
     const overOverlay = hovered?.closest("#audioOverlayTrack");
     audioOverlayTrack.classList.toggle("dragover", Boolean(overOverlay && draggedClip && draggedClip.mediaType === "audio"));
@@ -1189,7 +1165,7 @@ const FORMS = {
     const wasEngaged = dragEngaged;
     const draggedClip = timeline[fromIndex];
     if (dragGhost) { dragGhost.remove(); dragGhost = null; }
-    timelineTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip", "drop-before", "drop-after"));
+    timelineTrack.querySelectorAll(".studio-clip").forEach((b) => b.classList.remove("dragging-clip"));
     audioOverlayTrack.classList.remove("dragover");
     dragSourceIndex = null;
     dragEngaged = false;
@@ -1208,13 +1184,14 @@ const FORMS = {
       return;
     }
 
-    const target = hovered?.closest(".studio-clip");
-    if (!target || target.parentElement !== timelineTrack) return;
-    const targetIndex = Array.from(timelineTrack.children).indexOf(target);
-    if (targetIndex === -1) return;
-    const rect = target.getBoundingClientRect();
-    const before = e.clientX - rect.left < rect.width / 2;
-    reorderClip(fromIndex, targetIndex + (before ? 0 : 1));
+    // Repositionnement libre le long de la piste principale : le point de dépôt (moins le
+    // décalage de préhension) fixe le nouveau `start` — des trous sont autorisés, comblés au
+    // noir/silence à l'export (voir concat_clips côté serveur).
+    if (draggedClip) {
+      const rect = timelineTrack.getBoundingClientRect();
+      draggedClip.start = Math.max(0, (e.clientX - dragGrabOffsetX - rect.left) / PX_PER_SEC);
+    }
+    renderTimeline();
   });
 
   function positionOverlayGhost(e) {
