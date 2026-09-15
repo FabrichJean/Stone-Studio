@@ -313,14 +313,14 @@ def studio_render_progress(job_id: str):
 
 
 def _run_timeline_export_job(
-    job_id: str, paths: list[Path], overlays: list[dict], base_name: str
+    job_id: str, main_clips: list[dict], overlays: list[dict], base_name: str
 ) -> None:
     def on_progress(frac: float) -> None:
         STUDIO_JOBS[job_id]["percent"] = round(frac * 100, 1)
 
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            result_path = concat_clips_with_overlays(paths, overlays, Path(tmp), on_progress)
+            result_path = concat_clips_with_overlays(main_clips, overlays, Path(tmp), on_progress)
         except Exception as e:
             # Toute exception (pas seulement ChainError) doit marquer le job en erreur, sinon
             # elle tue silencieusement ce thread et le frontend sonde indéfiniment un job
@@ -346,18 +346,18 @@ def _run_timeline_export_job(
 
 @app.post("/api/studio/export-timeline")
 async def api_studio_export_timeline(
-    clip_ids: str = Form(...),
+    clips: str = Form(...),  # JSON: [{"id","start"}, ...] — piste principale, position libre
     audio_overlays: str = Form("[]"),  # JSON: [{"id","start"}, ...] — piste audio parallèle
 ):
     try:
-        ids = json.loads(clip_ids)
+        clip_specs = json.loads(clips)
     except json.JSONDecodeError:
         raise HTTPException(400, "Timeline invalide")
     try:
         overlay_specs = json.loads(audio_overlays)
     except json.JSONDecodeError:
         raise HTTPException(400, "Piste audio invalide")
-    if not ids and not overlay_specs:
+    if not clip_specs and not overlay_specs:
         raise HTTPException(400, "La timeline est vide")
 
     paths = []

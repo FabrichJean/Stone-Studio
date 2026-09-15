@@ -311,6 +311,16 @@ def concat_clips(clips: list[dict], workdir: Path, on_progress: ProgressCallback
         # (silence, ou fond noir de la bonne durée) sous forme de source synthétique.
         next_input_index = n
         for i, p in enumerate(clip_paths):
+            if p.suffix.lower() in AUDIO_EXTS:
+                black_idx = next_input_index
+                next_input_index += 1
+                cmd += [
+                    "-f", "lavfi", "-t", str(_probe_duration(p)),
+                    "-i", f"color=c=black:s={target_w}x{target_h}:r=25",
+                ]
+                filter_parts.append(f"[{black_idx}:v]scale={target_w}:{target_h},setsar=1[v{i}]")
+                filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}]")
+                continue
             filter_parts.append(f"[{i}:v]scale={target_w}:{target_h},setsar=1[v{i}]")
             if _has_audio_stream(p):
                 filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}]")
@@ -348,36 +358,42 @@ def concat_clips(clips: list[dict], workdir: Path, on_progress: ProgressCallback
 
 
 def concat_clips_with_overlays(
-    clip_paths: list[Path],
+    main_clips: list[dict],
     audio_overlays: list[dict],
     workdir: Path,
     on_progress: ProgressCallback | None = None,
 ) -> Path:
-    """Assemble la piste principale (bout à bout, comme `concat_clips`) puis mixe par-dessus
+    """Assemble la piste principale (position libre, comme `concat_clips`) puis mixe par-dessus
     les clips de la piste audio parallèle, chacun décalé à son propre point de départ — ils
     peuvent librement se superposer entre eux et avec la piste principale.
 
-    `audio_overlays` : [{"path": Path, "start": float}, ...]. Sans piste principale, les
-    overlays sont simplement mixés entre eux (utile pour une timeline 100% audio)."""
+    `main_clips` : [{"path": Path, "start": float}, ...]. `audio_overlays` : idem. Sans piste
+    principale, les overlays sont simplement mixés entre eux (utile pour une timeline 100%
+    audio)."""
     if not audio_overlays:
-        return concat_clips(clip_paths, workdir, on_progress)
+        return concat_clips(main_clips, workdir, on_progress)
 
-    if clip_paths:
+    if main_clips:
         def main_progress(frac: float) -> None:
             if on_progress:
                 on_progress(frac * 0.6)
 
-        main_path = concat_clips(clip_paths, workdir, main_progress)
+        main_path = concat_clips(main_clips, workdir, main_progress)
         main_duration = _probe_duration(main_path)
         overlays_end = max(
             (o["start"] + _probe_duration(o["path"]) for o in audio_overlays), default=0.0
         )
         total_duration = max(main_duration, overlays_end)
         has_video = main_path.suffix.lower() in VIDEO_EXTS
+        # `concat_clips` renvoie le clip d'origine tel quel quand il n'y en a qu'un seul (pas de
+        # ré-encodage) : une vidéo sans piste audio (écran sans micro, etc.) arrive donc ici sans
+        # flux `:a` du tout, alors que le filtre de mixage ci-dessous en suppose toujours un.
+        main_has_audio = _has_audio_stream(main_path)
     else:
         main_path = None
         total_duration = max(o["start"] + _probe_duration(o["path"]) for o in audio_overlays)
         has_video = False
+        main_has_audio = False
 
     cmd = ["ffmpeg", "-y"]
     inputs = ([main_path] if main_path is not None else []) + [o["path"] for o in audio_overlays]
@@ -388,9 +404,10 @@ def concat_clips_with_overlays(
     mix_labels = []
     base_idx = 0
     if main_path is not None:
-        filter_parts.append("[0:a]aformat=sample_rates=44100:channel_layouts=stereo[amain]")
-        mix_labels.append("[amain]")
         base_idx = 1
+        if main_has_audio:
+            filter_parts.append("[0:a]aformat=sample_rates=44100:channel_layouts=stereo[amain]")
+            mix_labels.append("[amain]")
 
     for j, overlay in enumerate(audio_overlays):
         idx = base_idx + j
