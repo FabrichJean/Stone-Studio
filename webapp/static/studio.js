@@ -538,23 +538,14 @@ const FORMS = {
     syncMainPlayback(true);
     syncOverlayPlayback(true);
     transportRafId = requestAnimationFrame(() => transportStep(performance.now()));
-    const media = loadClipForPlayback(idx);
-    if (!media) { transportPlaying = false; updateTransportPlayIcon(); return; }
-    const local = playheadTime - clipStartTime(idx);
-    const start = () => { media.currentTime = local; media.play(); syncOverlayPlayback(true); };
-    if (media.readyState >= 1) start(); else media.addEventListener("loadedmetadata", start, { once: true });
-    attachTransportTracking(media);
   }
 
   function pauseTransport() {
     transportPlaying = false;
     updateTransportPlayIcon();
-    detachTransportTracking();
-    if (playingIndex >= 0 && playingIndex < timeline.length) {
-      const clip = timeline[playingIndex];
-      const media = clip && clip.mediaType === "audio" ? audioEl : videoEl;
-      media.pause();
-    }
+    if (transportRafId !== null) { cancelAnimationFrame(transportRafId); transportRafId = null; }
+    videoEl.pause();
+    audioEl.pause();
     overlayEls.forEach((el) => el.pause());
   }
 
@@ -643,7 +634,7 @@ const FORMS = {
     studioEmpty.hidden = true;
     studioMain.hidden = false;
 
-    timeline = [{ id: null, name: file.name, mediaType, size: file.size, duration: null, hasFilmstrip: false, localUrl }];
+    timeline = [{ id: null, name: file.name, mediaType, size: file.size, duration: null, hasFilmstrip: false, localUrl, start: 0 }];
     activeIndex = 0;
     setActiveClip(0);
     renderTimeline();
@@ -722,19 +713,15 @@ const FORMS = {
   // devient la cible des outils du panneau de droite (découpage, volume, etc.), exactement
   // comme un clip de la piste principale — seule la source diffère (audioOverlays vs timeline).
   function setActiveOverlayClip(index) {
-    if (transportPlaying) pauseTransport();
+    // Contrairement à setActiveClip, on ne touche pas à videoEl/audioEl (moteur de lecture
+    // globale de la timeline, indexé par playingIndex) : un clip d'overlay n'a pas de place
+    // dans cette séquence, seul son aperçu dans le panneau d'édition change (via
+    // updateActiveClipBanner ci-dessous, qui pilote panelAudio/panelVideo).
     activeIndex = -1;
     activeOverlayIndex = index;
     stagedSource = null;
     const clip = audioOverlays[index];
     if (!clip) return;
-    // Ne jamais écrire directement dans videoEl/audioEl ici : ce sont les éléments partagés
-    // qui pilotent le transport global (lecture séquentielle de toute la timeline), et les
-    // réaffecter à la main désynchronise `playingIndex` — la lecture globale se retrouvait
-    // ensuite bloquée sur une source vidée. `seekTo` est le seul point qui les manipule,
-    // en se basant sur la position du clip d'overlay dans la timeline plutôt que sur son
-    // propre contenu (prévisualisé séparément dans le panneau via updateActiveClipBanner).
-    seekTo(clip.start || 0);
     updateActiveClipBanner();
     renderTimeline();
     selectAction(selectedType);
@@ -810,8 +797,20 @@ const FORMS = {
 
   function addFileToTimeline(file) {
     const mediaType = file.type.startsWith("audio/") ? "audio" : "video";
+
+    // La piste principale accepte un mélange vidéo/audio (fond noir synthétique généré à
+    // l'export pour les clips audio, voir concat_clips côté serveur), mais un fichier audio
+    // déposé ailleurs que sur la piste parallèle alors qu'il y a déjà de la vidéo rejoint quand
+    // même les overlays par défaut — c'est l'usage le plus courant (musique de fond).
+    if (mediaType === "audio" && timeline.some((c) => c.mediaType === "video")) {
+      const start = audioOverlays.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
+      pushFileToAudioOverlay(file, start);
+      return;
+    }
+
+    const start = timeline.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
     const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    timeline.push({ tempId, pending: true, mediaType, duration: null, name: file.name });
+    timeline.push({ tempId, pending: true, mediaType, duration: null, name: file.name, start });
     renderTimeline();
 
     const formData = new FormData();
@@ -823,7 +822,7 @@ const FORMS = {
         if (idx === -1) return;
         timeline[idx] = {
           id: record.id, name: record.output_name, mediaType: record.media_type,
-          size: record.output_size, duration: record.duration, hasFilmstrip: record.has_filmstrip,
+          size: record.output_size, duration: record.duration, hasFilmstrip: record.has_filmstrip, start,
         };
         renderTimeline();
         pollFilmstrip(timeline[idx]);
@@ -854,6 +853,10 @@ const FORMS = {
   function addFileToAudioOverlay(file, clientX) {
     const rect = audioOverlayTrack.getBoundingClientRect();
     const start = Math.max(0, (clientX - rect.left) / PX_PER_SEC);
+    pushFileToAudioOverlay(file, start);
+  }
+
+  function pushFileToAudioOverlay(file, start) {
     const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     audioOverlays.push({ tempId, pending: true, mediaType: "audio", duration: null, name: file.name, start });
     renderTimeline();
@@ -982,7 +985,7 @@ const FORMS = {
     }, 1500);
   }
 
-  function overlayEnd(clip) {
+  function clipEnd(clip) {
     return (clip.start || 0) + (clip.duration || 3);
   }
 
