@@ -360,11 +360,11 @@ async def api_studio_export_timeline(
     if not clip_specs and not overlay_specs:
         raise HTTPException(400, "La timeline est vide")
 
-    paths = []
+    main_clips = []
     base_name = None
-    for cid in ids:
-        path, record = _resolve_project_path(cid)
-        paths.append(path)
+    for spec in clip_specs:
+        path, record = _resolve_project_path(spec["id"])
+        main_clips.append({"path": path, "start": max(0.0, float(spec.get("start", 0)))})
         if base_name is None:
             base_name = Path(record["output_name"]).stem
 
@@ -378,7 +378,7 @@ async def api_studio_export_timeline(
     job_id = uuid.uuid4().hex
     STUDIO_JOBS[job_id] = {"status": "processing", "percent": 0}
     thread = threading.Thread(
-        target=_run_timeline_export_job, args=(job_id, paths, overlays, base_name), daemon=True,
+        target=_run_timeline_export_job, args=(job_id, main_clips, overlays, base_name), daemon=True,
     )
     thread.start()
     return {"job_id": job_id}
