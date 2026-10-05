@@ -2,17 +2,36 @@
 
 Studio de montage de contenu — une collection d'outils Python (chacun dédié à une tâche précise) exposés via un client web FastAPI.
 
-## Prérequis
+## Installation
 
-- Python 3.9+
-- [ffmpeg](https://ffmpeg.org/) et `ffprobe` installés et disponibles dans le `PATH`
+### 1. Prérequis système (hors pip)
 
-Vérifier :
+- **Python 3.10+** (le code utilise la syntaxe `X | None` à l'exécution)
+- **ffmpeg** et **ffprobe** dans le `PATH`, compilés avec les filtres lavfi utilisés par le Studio et la Synthèse (`life`, `mandelbrot`, `cellauto`, `gradients`, `sierpinski`, `anoisesrc`, `showwaves`, `showspectrum`, `showcqt`, `avectorscope`) et les encodeurs `libx264` et `aac`. La plupart des builds officiels les incluent.
+
+| Système | Commande |
+|---|---|
+| macOS | `brew install ffmpeg python@3.12` |
+| Debian / Ubuntu | `sudo apt install ffmpeg python3 python3-venv` |
+| Windows | `winget install Gyan.FFmpeg` puis Python 3.10+ depuis python.org |
+
+### 2. Environnement Python
 
 ```bash
-ffmpeg -version
-python3 --version
+cd "Stone Studio"
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
+
+Le dossier `.venv/` est propre à chaque machine : ne le copiez pas d'un poste à l'autre, recréez-le.
+
+### 3. Vérification
+
+```bash
+.venv/bin/python scripts/check_env.py
+```
+
+Ce script contrôle la version de Python, la présence de ffmpeg/ffprobe avec les filtres requis, les paquets Python, et crée les dossiers `uploads/`, `output/` et `thumbnails/`. Il s'arrête avec un message précis pour chaque problème restant.
 
 ## Structure du projet
 
@@ -46,10 +65,10 @@ Interface graphique servie par FastAPI, reprenant tous les outils du dossier `to
 
 ```bash
 cd "Stone Studio"
-.venv/bin/uvicorn webapp.main:app --reload --port 8000
+./run.sh
 ```
 
-Puis ouvrir http://127.0.0.1:8000
+Puis ouvrir http://127.0.0.1:8000 (ne lancez l'application qu'après `scripts/check_env.py` sans erreur).
 
 ### Pages disponibles
 
