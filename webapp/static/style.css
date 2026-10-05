@@ -1201,6 +1201,8 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   margin-top: 12px;
 }
 
+.checkbox-label[hidden] { display: none; }
+
 .page-header h1 {
   display: flex;
   align-items: center;
@@ -1342,6 +1344,44 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 .preset-card.active .preset-card-title { color: var(--accent); }
 .preset-card-desc { font-size: 12px; line-height: 1.4; }
 
+.preset-grid-compact {
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+}
+
+.preset-card-compact {
+  align-items: center;
+  padding: 10px 4px;
+}
+
+/* Couches d'accompagnement : cases à cocher indépendantes, pas un choix exclusif comme les
+   autres grilles de presets — un petit indicateur de case dissipe l'ambiguïté visuelle. */
+#melodyLayersGrid .preset-card {
+  position: relative;
+  padding-right: 36px;
+}
+
+#melodyLayersGrid .preset-card::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+#melodyLayersGrid .preset-card.active::after {
+  content: "\2713";
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+}
+
 /* Speed */
 .mode-toggle {
   display: flex;
@@ -1350,6 +1390,8 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   overflow: hidden;
   margin-bottom: 20px;
 }
+
+.mode-toggle[hidden] { display: none; }
 
 .mode-toggle-btn {
   flex: 1;
@@ -1377,6 +1419,8 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
   color: var(--text-muted);
   margin-bottom: 16px;
 }
+
+.speed-label[hidden] { display: none; }
 
 .speed-label select {
   padding: 8px 10px;
@@ -2626,3 +2670,27 @@ html.sidebar-collapsed .nav-item .icon { flex-shrink: 0; }
 .record-controls { margin-top: 20px; }
 .record-controls .record-btn { margin-top: 0; }
 .record-controls .btn-secondary { flex: 1; justify-content: center; }
+
+/* ===================== Synthétiser ===================== */
+
+.synth-mode-panel[hidden] { display: none; }
+
+.synth-mode-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 14px 0 0;
+}
+
+.studio-active-clip button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+}
+
+#synthPreviewVideo,
+#synthPreviewAudio {
+  width: 100%;
+  border-radius: 6px;
+}

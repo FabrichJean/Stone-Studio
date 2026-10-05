@@ -15,6 +15,8 @@ const ICONS = {
   compress: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v3a1 1 0 0 1-1 1H2M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M10 14v-3a1 1 0 0 1 1-1h3"/></svg>`,
   sliders: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v3M3 9v4M8 3v6M8 12v1M13 3v1M13 7v6"/><circle cx="3" cy="7.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="8" cy="10.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="13" cy="5.5" r="1.4" fill="currentColor" stroke="none"/></svg>`,
   volume: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 6h2.3L7 3.2v9.6L3.8 10H1.5z" fill="currentColor" stroke="none"/><path d="M10 5.5a3.2 3.2 0 0 1 0 5M12 3.5a6 6 0 0 1 0 9"/></svg>`,
+  sparkle: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.2l1.4 3.6 3.6 1.4-3.6 1.4L8 11.2l-1.4-3.6-3.6-1.4 3.6-1.4z"/><path d="M13 9.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg>`,
+  mic: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0"/><path d="M8 12.5v2M5.5 14.5h5"/></svg>`,
 };
 
 function iconHtml(name, extraClass = "") {
@@ -31,6 +33,7 @@ const TOOL_ICONS = {
   remake_sound: ICONS.sliders,
   volume_media: ICONS.volume,
   compress_media: ICONS.compress,
+  synthesize: ICONS.sparkle,
   upload: ICONS.upload,
 };
 
@@ -43,4 +46,5 @@ const TOOL_DESTINATIONS = [
   { key: "noise_removal", path: "/noise-removal", label: "Suppression bruit", icon: "noise" },
   { key: "remake_sound", path: "/remake-sound", label: "Remake sound", icon: "sliders" },
   { key: "volume_media", path: "/volume", label: "Volume", icon: "volume" },
+  { key: "synthesize", path: "/synthesize", label: "Synthétiser", icon: "sparkle" },
 ];

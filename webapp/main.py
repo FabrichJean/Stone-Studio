@@ -27,7 +27,23 @@ sys.path.insert(0, str(ROOT / "tools" / "noise_removal"))
 sys.path.insert(0, str(ROOT / "tools" / "remake_sound"))
 sys.path.insert(0, str(ROOT / "tools" / "volume_media"))
 sys.path.insert(0, str(ROOT / "tools" / "compress_media"))
+sys.path.insert(0, str(ROOT / "tools" / "synthesize"))
 from compress_media import LEVELS as COMPRESS_LEVELS, RESOLUTIONS, compress_video  # noqa: E402
+from synthesize import (  # noqa: E402
+    ASPECTS,
+    MELODY_KEYS,
+    MELODY_LAYERS,
+    MELODY_SCALES,
+    MELODY_TIMBRES,
+    SynthesizeError,
+    TEXTURE_PRESETS,
+    TONE_PRESETS,
+    VISUALIZER_PRESETS,
+    generate_melody_wrapped,
+    generate_texture,
+    generate_tone,
+    generate_visualizer,
+)
 from extract_audio import FORMATS, extract_audio  # noqa: E402
 from media_utils import generate_filmstrip, generate_thumbnail, probe_media  # noqa: E402
 from orientation import (  # noqa: E402
@@ -68,6 +84,7 @@ ORIENTATION_JOBS: dict[str, dict] = {}
 SPEED_JOBS: dict[str, dict] = {}
 VOLUME_JOBS: dict[str, dict] = {}
 STUDIO_JOBS: dict[str, dict] = {}
+SYNTHESIZE_JOBS: dict[str, dict] = {}
 
 app = FastAPI(title="Stone Studio")
 
@@ -108,6 +125,7 @@ TOOL_LABELS = {
     "remake_sound": "Remake sound",
     "volume_media": "Volume",
     "compress_media": "Compression vidéo",
+    "synthesize": "Synthétiser",
     "studio_chain": "Studio",
 }
 
@@ -124,6 +142,7 @@ PAGE_TITLES = {
     "remake_sound": "Remake sound",
     "volume_media": "Volume",
     "compress_media": "Compression vidéo",
+    "synthesize": "Synthétiser",
     "projects": "Mes projets",
 }
 templates.env.globals["PAGE_TITLES"] = PAGE_TITLES
@@ -419,6 +438,23 @@ def volume_page(request: Request):
 @app.get("/compress")
 def compress_page(request: Request):
     return templates.TemplateResponse(request, "compress_media.html", {"active_tool": "compress_media"})
+
+
+@app.get("/synthesize")
+def synthesize_page(request: Request):
+    return templates.TemplateResponse(
+        request, "synthesize.html",
+        {
+            "active_tool": "synthesize",
+            "texture_presets": TEXTURE_PRESETS,
+            "tone_presets": TONE_PRESETS,
+            "visualizer_presets": VISUALIZER_PRESETS,
+            "melody_keys": list(MELODY_KEYS),
+            "melody_scales": MELODY_SCALES,
+            "melody_timbres": MELODY_TIMBRES,
+            "melody_layers": MELODY_LAYERS,
+        },
+    )
 
 
 @app.get("/record")
@@ -1151,6 +1187,117 @@ async def api_compress_media(
 @app.get("/api/compress-media/{job_id}/progress")
 def compress_progress(job_id: str):
     job = COMPRESS_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche introuvable")
+    return job
+
+
+def _run_synthesize_job(
+    job_id: str, kind: str, preset: str, duration: float, aspect: str,
+    tone_params: dict, media_path: Path | None, base_name: str, melody_params: dict | None = None,
+) -> None:
+    def on_progress(frac: float) -> None:
+        SYNTHESIZE_JOBS[job_id]["percent"] = round(frac * 100, 1)
+
+    output_file = f"{job_id}.m4a" if kind in ("tone", "melody") else f"{job_id}.mp4"
+    output_path = OUTPUT_DIR / output_file
+
+    try:
+        if kind == "texture":
+            generate_texture(preset, duration, aspect, output_path, on_progress)
+        elif kind == "tone":
+            generate_tone(preset, duration, tone_params, output_path, on_progress)
+        elif kind == "melody":
+            generate_melody_wrapped(
+                media_path, melody_params["key"], melody_params["scale"], melody_params["timbre"],
+                output_path, melody_params["layers"], on_progress,
+            )
+        else:
+            generate_visualizer(preset, media_path, aspect, output_path, on_progress)
+    except SynthesizeError as e:
+        SYNTHESIZE_JOBS[job_id] = {"status": "error", "percent": 0, "error": str(e)}
+        return
+
+    output_name = f"{base_name}{output_path.suffix}"
+    record = save_project("synthesize", base_name, "output", output_file, output_name)
+    SYNTHESIZE_JOBS[job_id] = {
+        "status": "done", "percent": 100,
+        "project_id": record["id"],
+        "output_name": output_name,
+        "output_size": output_path.stat().st_size,
+        "duration": record["duration"],
+        "media_type": record["media_type"],
+        "has_filmstrip": record["has_filmstrip"],
+    }
+
+
+@app.post("/api/synthesize")
+async def api_synthesize(
+    kind: str = Form(...),  # "texture" | "tone" | "visualizer" | "melody"
+    preset: str = Form(""),
+    duration: float = Form(6.0),
+    aspect: str = Form("landscape"),
+    frequency: float = Form(440.0),
+    minor: bool = Form(False),
+    beat: float = Form(10.0),
+    color: str = Form("pink"),
+    key: str = Form("C"),
+    scale: str = Form("major"),
+    timbre: str = Form("piano"),
+    layers: str = Form(""),  # liste de MELODY_LAYERS séparés par des virgules, ex. "bass,pad"
+    media: UploadFile | None = File(None),
+    source_project_id: str | None = Form(None),  # fichier déjà connu (sélecteur de projet) : pas de re-upload
+):
+    if kind not in ("texture", "tone", "visualizer", "melody"):
+        raise HTTPException(400, "Type de synthèse invalide.")
+    if aspect not in ASPECTS:
+        raise HTTPException(400, f"Format d'image non supporté : {aspect}")
+    duration = max(1.0, min(duration, 300.0))
+
+    media_path = None
+    melody_params = None
+    if kind == "texture":
+        if preset not in TEXTURE_PRESETS:
+            raise HTTPException(400, f"Preset non supporté : {preset}")
+        base_name = TEXTURE_PRESETS[preset]["label"].lower().replace(" ", "_")
+    elif kind == "tone":
+        if preset not in TONE_PRESETS:
+            raise HTTPException(400, f"Preset non supporté : {preset}")
+        base_name = TONE_PRESETS[preset]["label"].lower().replace(" ", "_")
+    elif kind == "melody":
+        if key not in MELODY_KEYS:
+            raise HTTPException(400, f"Tonalité non supportée : {key}")
+        if scale not in MELODY_SCALES:
+            raise HTTPException(400, f"Gamme non supportée : {scale}")
+        if timbre not in MELODY_TIMBRES:
+            raise HTTPException(400, f"Timbre non supporté : {timbre}")
+        requested_layers = {l for l in layers.split(",") if l}
+        if requested_layers - set(MELODY_LAYERS):
+            raise HTTPException(400, f"Couche non supportée : {requested_layers - set(MELODY_LAYERS)}")
+        media_path, filename = _resolve_input(media, source_project_id, uuid.uuid4().hex)
+        base_name = f"{Path(filename).stem}_melodie"
+        melody_params = {"key": key, "scale": scale, "timbre": timbre, "layers": requested_layers}
+    else:
+        if preset not in VISUALIZER_PRESETS:
+            raise HTTPException(400, f"Preset non supporté : {preset}")
+        media_path, filename = _resolve_input(media, source_project_id, uuid.uuid4().hex)
+        base_name = Path(filename).stem
+
+    job_id = uuid.uuid4().hex
+    tone_params = {"frequency": frequency, "minor": minor, "beat": beat, "color": color}
+    SYNTHESIZE_JOBS[job_id] = {"status": "processing", "percent": 0}
+    thread = threading.Thread(
+        target=_run_synthesize_job,
+        args=(job_id, kind, preset, duration, aspect, tone_params, media_path, base_name, melody_params),
+        daemon=True,
+    )
+    thread.start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/synthesize/{job_id}/progress")
+def synthesize_progress(job_id: str):
+    job = SYNTHESIZE_JOBS.get(job_id)
     if not job:
         raise HTTPException(404, "Tâche introuvable")
     return job
