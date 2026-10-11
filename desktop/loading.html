@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'" />
+  <title>Stone Studio</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: #faf9f5; color: #3d3929;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .mark { color: #d97757; font-size: 28px; line-height: 1; }
+    .name { font-size: 20px; font-weight: 600; letter-spacing: 0.2px; }
+    .hint { font-size: 13px; color: #87867f; }
+    .bar { width: 160px; height: 3px; border-radius: 3px; background: #ebe8df; overflow: hidden; }
+    .bar::after {
+      content: ""; display: block; width: 40%; height: 100%; background: #d97757;
+      animation: slide 1.1s ease-in-out infinite;
+    }
+    @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  </style>
+</head>
+<body>
+  <div class="mark">&#10022;</div>
+  <div class="name">Stone Studio</div>
+  <div class="bar"></div>
+  <div class="hint">Démarrage du moteur…</div>
+</body>
+</html>
