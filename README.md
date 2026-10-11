@@ -86,6 +86,31 @@ Puis ouvrir http://127.0.0.1:8000 (ne lancez l'application qu'après `scripts/ch
 
 Les traitements longs (compression, trim, speed, orientation, enregistrement, studio) s'exécutent en tâche de fond avec une barre de progression suivie via polling (`/api/<outil>/{job_id}/progress`).
 
+## Application desktop
+
+Le dossier `desktop/` emballe la même application dans une fenêtre Electron, pour macOS, Windows et Linux. Il n'y a pas de deuxième interface : l'app lance le serveur FastAPI ci-dessus en local (sur un port libre) et l'affiche. Toute évolution du client web profite donc aux deux versions.
+
+L'installeur est autonome : Python, les dépendances et ffmpeg/ffprobe sont embarqués, l'utilisateur final n'installe rien. Les données (fichiers importés, sorties, `projects.json`) sont rangées dans le dossier utilisateur du système (par exemple `~/Library/Application Support/Stone Studio/data` sur macOS) au lieu du dossier du code. Le serveur web, lui, continue d'utiliser le dossier du dépôt.
+
+Développement (après l'installation Python ci-dessus) :
+
+```bash
+cd desktop
+npm install --include=dev   # télécharge Electron et ffmpeg/ffprobe dans desktop/vendor/
+npm start
+```
+
+`--include=dev` est nécessaire si `NODE_ENV=production` est défini dans votre shell : npm ignorerait sinon Electron et ffmpeg. Si `npm start` échoue avec `Cannot read properties of undefined (reading 'requestSingleInstanceLock')`, la variable `ELECTRON_RUN_AS_NODE` est définie (c'est le cas dans le terminal intégré de VS Code) : lancez `env -u ELECTRON_RUN_AS_NODE npm start`.
+
+Construire l'installeur pour le système courant :
+
+```bash
+.venv/bin/pip install -r desktop/requirements-build.txt
+cd desktop && npm run dist    # → desktop/dist/ (.dmg, .exe ou .AppImage)
+```
+
+Chaque système doit être construit sur lui-même. Le workflow GitHub Actions `.github/workflows/desktop.yml` produit les trois installeurs, à lancer depuis l'onglet Actions ou en poussant un tag `v*`.
+
 ## Outils
 
 ### extract_audio — Extraire l'audio d'une vidéo
