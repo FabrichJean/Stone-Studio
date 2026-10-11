@@ -1,0 +1,72 @@
+{
+  "name": "stone-studio-desktop",
+  "productName": "Stone Studio",
+  "version": "0.1.0",
+  "description": "Stone Studio — application desktop (Electron) autour du serveur web FastAPI.",
+  "author": "FabrichJean",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "postinstall": "node scripts/vendor-ffmpeg.js",
+    "start": "electron .",
+    "build:backend": "node scripts/build-backend.js",
+    "dist": "npm run build:backend && electron-builder --publish never",
+    "dist:dir": "npm run build:backend && electron-builder --dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0",
+    "ffmpeg-static": "^5.2.0"
+  },
+  "build": {
+    "appId": "com.stonestudio.desktop",
+    "productName": "Stone Studio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "icon": "resources/icon.png",
+    "files": [
+      "main.js",
+      "loading.html",
+      "package.json",
+      "resources/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend/stone-studio-server",
+        "to": "backend/stone-studio-server"
+      },
+      {
+        "from": "vendor/ffmpeg",
+        "to": "ffmpeg"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        "dmg"
+      ],
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Stone Studio utilise le micro pour enregistrer un vocal ou la voix d'un enregistrement d'écran."
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo"
+    }
+  }
+}
