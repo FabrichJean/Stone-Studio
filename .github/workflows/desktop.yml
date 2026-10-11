@@ -1,0 +1,51 @@
+name: Desktop
+
+# Construit l'application desktop pour chaque système sur sa propre machine : PyInstaller et
+# ffmpeg-static ne produisent que des binaires pour la plateforme sur laquelle ils tournent.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: "desktop/dist/*.dmg"
+          - os: windows-latest
+            artifact: "desktop/dist/*.exe"
+          - os: ubuntu-22.04
+            artifact: "desktop/dist/*.AppImage"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dépendances Python (serveur + PyInstaller)
+        run: pip install -r desktop/requirements-build.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Dépendances desktop (Electron, ffmpeg)
+        working-directory: desktop
+        run: npm ci --include=dev
+
+      - name: Construction de l'installeur
+        working-directory: desktop
+        run: npm run dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stone-studio-${{ matrix.os }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
