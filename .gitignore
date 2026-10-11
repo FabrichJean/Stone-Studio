@@ -27,3 +27,8 @@ thumbnails/
 .DS_Store
 .vscode/
 docs/
+# Application desktop (Electron)
+desktop/node_modules/
+desktop/build/
+desktop/dist/
+desktop/vendor/
