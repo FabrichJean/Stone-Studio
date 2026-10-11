@@ -2,6 +2,7 @@
 """Stone Studio — serveur web (FastAPI)."""
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -65,13 +66,15 @@ from trim_media import combine_segments, is_valid_time  # noqa: E402
 from volume_media import change_volume, volume_segments  # noqa: E402
 from studio_chain import concat_clips_with_overlays, run_chain  # noqa: E402
 
-UPLOADS_DIR = ROOT / "uploads"
-OUTPUT_DIR = ROOT / "output"
-THUMBS_DIR = ROOT / "thumbnails"
-PROJECTS_FILE = ROOT / "projects.json"
-UPLOADS_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
-THUMBS_DIR.mkdir(exist_ok=True)
+# L'app desktop pointe ce dossier vers le répertoire utilisateur : le dossier du code y est en lecture seule.
+DATA_DIR = Path(os.environ.get("STONE_STUDIO_DATA_DIR") or ROOT)
+UPLOADS_DIR = DATA_DIR / "uploads"
+OUTPUT_DIR = DATA_DIR / "output"
+THUMBS_DIR = DATA_DIR / "thumbnails"
+PROJECTS_FILE = DATA_DIR / "projects.json"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 
 DIRS = {"uploads": UPLOADS_DIR, "output": OUTPUT_DIR}
 
